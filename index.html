@@ -122,6 +122,9 @@ body {
   gap: 16px;
   margin-bottom: 28px;
 }
+@media (max-width: 480px) {
+  .summary-cards { grid-template-columns: 1fr; gap: 10px; }
+}
 
 .card {
   background: var(--surface);
@@ -522,18 +525,113 @@ td .badge {
 
 .income-row .form-group { flex: 1; min-width: 200px; margin-bottom: 0; }
 
-/* ===== RESPONSIVE ===== */
+/* ===== MOBILE CARD LAYOUT (tables → cards) ===== */
+@media (max-width: 768px) {
+  /* Convert tables to stacked cards */
+  .table-wrap table,
+  .table-wrap thead,
+  .table-wrap tbody,
+  .table-wrap tr,
+  .table-wrap td,
+  .table-wrap th {
+    display: block;
+    width: 100% !important;
+  }
+  .table-wrap thead { display: none; }
+  .table-wrap tbody tr {
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    margin-bottom: 10px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+  }
+  .table-wrap tbody tr:hover { background: var(--bg); }
+  .table-wrap td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: none;
+    padding: 5px 0;
+    white-space: normal;
+    font-size: 0.88rem;
+  }
+  .table-wrap td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+  }
+  .table-wrap td[data-label="Status"],
+  .table-wrap td[data-label="Ações"] {
+    display: inline-flex;
+    padding-top: 8px;
+    gap: 8px;
+  }
+  .table-wrap td[data-label="Status"]::before,
+  .table-wrap td[data-label="Ações"]::before {
+    display: none;
+  }
+  .table-wrap td[data-label="Status"] .status-checkbox {
+    width: 24px; height: 24px;
+  }
+  /* Special: row with checkbox + actions inline at bottom */
+  .mobile-actions-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+  .mobile-actions-row .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+}
+
 @media (max-width: 640px) {
-  body { padding: 10px; }
-  .header { flex-direction: column; align-items: stretch; }
-  .header h1 { text-align: center; }
-  .nav-bar { justify-content: center; }
+  body { padding: 8px; padding-bottom: 24px; }
+  .header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .header h1 { text-align: center; font-size: 1.35rem; }
+  .nav-bar { justify-content: center; flex-wrap: wrap; gap: 6px; }
+  .nav-btn { padding: 7px 10px; font-size: 0.8rem; }
   .period-selector { justify-content: center; }
+  .period-selector select { padding: 7px 10px; font-size: 0.88rem; }
   .form-row, .form-row-3 { grid-template-columns: 1fr; }
-  .card-value { font-size: 1.4rem; }
-  th, td { padding: 8px 6px; font-size: 0.82rem; }
-  .modal { padding: 18px; }
-  .nav-btn { padding: 7px 10px; font-size: 0.82rem; }
+  .card-value { font-size: 1.3rem; }
+  .modal { padding: 16px; margin: 0; border-radius: var(--radius); }
+  .modal-overlay { padding: 10px; }
+  .summary-cards { gap: 10px; margin-bottom: 20px; }
+  .card { padding: 14px; }
+  .card-label { font-size: 0.72rem; }
+  .section { padding: 14px; margin-bottom: 16px; }
+  .section-title { font-size: 1.05rem; }
+  .section-header { gap: 8px; }
+  .btn { padding: 7px 14px; font-size: 0.85rem; }
+  .tabs { gap: 2px; margin-bottom: 16px; }
+  .tab { padding: 8px 12px; font-size: 0.85rem; }
+  .install-btn, .data-btn { padding: 7px 10px; font-size: 0.82rem; }
+  .total-fatura { padding: 12px 14px; }
+  .total-fatura .value { font-size: 1.2rem; }
+  .person-card { padding: 10px; }
+  .person-card .pvalue { font-size: 1.05rem; }
+  .persons-summary { gap: 8px; }
+  .chart-container { height: 220px; }
+  .toggle-type button { padding: 8px; font-size: 0.82rem; }
+  .google-login-btn span, .profile-name { display: none; }
+}
+
+@media (max-width: 400px) {
+  .card-value { font-size: 1.15rem; }
+  .header h1 { font-size: 1.2rem; }
+  .tab { padding: 7px 8px; font-size: 0.78rem; }
 }
 
 /* ===== TABS ===== */
@@ -646,7 +744,8 @@ td .badge {
 .year-breakdown .bal-neg { color: var(--danger); font-weight: 600; }
 .year-breakdown .current-row { background: var(--primary-light); }
 @media (max-width: 768px) {
-  .chart-grid { grid-template-columns: 1fr; }
+  .chart-grid { grid-template-columns: 1fr; gap: 14px; }
+  .dash-cards { grid-template-columns: 1fr 1fr; gap: 10px; }
 }
 </style>
 
@@ -1699,13 +1798,18 @@ function renderBills() {
 
   tbody.innerHTML = bills.map(bill => `
     <tr>
-      <td><input type="checkbox" class="status-checkbox" ${bill.isPaid ? 'checked' : ''} onchange="toggleBillPaid('${bill.id}')" title="Marcar como pago"></td>
-      <td style="font-weight:500">${bill.desc}</td>
-      <td><span style="color:var(--text-muted);font-size:.82rem">${bill.category}</span></td>
-      <td style="font-weight:600">${fmtMoney(bill.monthlyValue)}</td>
-      <td><span class="badge-parcel">${bill.parcelLabel}</span></td>
-      <td style="color:var(--text-muted)">${String(bill.dueDay).padStart(2,'0')}/${String(currentMonth+1).padStart(2,'0')}/${currentYear}</td>
-      <td>
+      <td data-label="Descrição" style="font-weight:600;font-size:.95rem;padding-bottom:2px">${bill.desc}</td>
+      <td data-label="Valor" style="font-weight:700;color:var(--primary-hover);font-size:1.05rem">${fmtMoney(bill.monthlyValue)}</td>
+      <td data-label="Categoria"><span style="color:var(--text-muted);font-size:.82rem">${bill.category}</span></td>
+      <td data-label="Parcela"><span class="badge-parcel">${bill.parcelLabel}</span></td>
+      <td data-label="Vencimento" style="color:var(--text-muted)">${String(bill.dueDay).padStart(2,'0')}/${String(currentMonth+1).padStart(2,'0')}/${currentYear}</td>
+      <td data-label="Status" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px">
+        <label class="checkbox-label" style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--text-muted);cursor:pointer">
+          <input type="checkbox" class="status-checkbox" ${bill.isPaid ? 'checked' : ''} onchange="toggleBillPaid('${bill.id}')" title="Marcar como pago">
+          ${bill.isPaid ? '<span class="badge paid">Pago</span>' : '<span class="badge pending">Pendente</span>'}
+        </label>
+      </td>
+      <td data-label="Ações" style="padding-top:8px;border-top:1px solid var(--border)">
         <button class="icon-btn" onclick="openBillModal(db.bills.find(b=>b.id==='${bill.id}'))" title="Editar">✏️</button>
         <button class="icon-btn danger" onclick="deleteBill('${bill.id}')" title="Excluir">🗑️</button>
       </td>
@@ -1807,12 +1911,12 @@ function renderCredits() {
 
   tbody.innerHTML = credits.map(c => `
     <tr>
-      <td style="font-weight:500">${c.desc}</td>
-      <td style="font-weight:600">${fmtMoney(c.parcelValue)}</td>
-      <td>${c.person === TITULAR ? `<strong style="color:var(--success)">${c.person} (Titular)</strong>` : c.person}</td>
-      <td><span class="badge-parcel">${c.installments > 1 ? c.currentParcel + '/' + c.installments : 'À vista'}</span></td>
-      <td style="color:var(--text-muted)">${fmtDate(c.date)}</td>
-      <td>
+      <td data-label="Compra" style="font-weight:600;font-size:.95rem">${c.desc}</td>
+      <td data-label="Valor" style="font-weight:700;color:var(--primary-hover);font-size:1.05rem">${fmtMoney(c.parcelValue)}</td>
+      <td data-label="Quem Comprou">${c.person === TITULAR ? `<strong style="color:var(--success)">${c.person} (Titular)</strong>` : c.person}</td>
+      <td data-label="Parcela"><span class="badge-parcel">${c.installments > 1 ? c.currentParcel + '/' + c.installments : 'À vista'}</span></td>
+      <td data-label="Data" style="color:var(--text-muted)">${fmtDate(c.date)}</td>
+      <td data-label="Ações" style="padding-top:8px;border-top:1px solid var(--border)">
         <button class="icon-btn danger" onclick="deleteCredit('${c.id}')" title="Excluir">🗑️</button>
       </td>
     </tr>
@@ -1915,10 +2019,10 @@ function renderIncomes() {
 
   tbody.innerHTML = incomes.map(inc => `
     <tr>
-      <td style="font-weight:500">${inc.desc} ${inc.recurring ? '<span class="badge-parcel" style="margin-left:6px">Recorrente</span>' : ''}</td>
-      <td style="font-weight:600;color:var(--success)">${fmtMoney(inc.value)}</td>
-      <td style="color:var(--text-muted)">${fmtDate(inc.date)}</td>
-      <td>
+      <td data-label="Descrição" style="font-weight:600;font-size:.95rem">${inc.desc} ${inc.recurring ? '<span class="badge-parcel" style="margin-left:6px">Recorrente</span>' : ''}</td>
+      <td data-label="Valor" style="font-weight:700;color:var(--success);font-size:1.05rem">${fmtMoney(inc.value)}</td>
+      <td data-label="Data" style="color:var(--text-muted)">${fmtDate(inc.date)}</td>
+      <td data-label="Ações" style="padding-top:8px;border-top:1px solid var(--border)">
         <button class="icon-btn danger" onclick="deleteIncome('${inc.id}')" title="Excluir">🗑️</button>
       </td>
     </tr>
@@ -2150,22 +2254,22 @@ function renderDashboard() {
     const isCurrent = m === currentMonth;
     breakdownHTML += `
       <tr class="${isCurrent ? 'current-row' : ''}">
-        <td style="font-weight:${isCurrent ? '600' : '400'}">${MONTHS[m]}</td>
-        <td style="color:var(--success)">${fmtMoney(incomeData[m])}</td>
-        <td style="color:var(--danger)">${fmtMoney(expenseData[m])}</td>
-        <td class="${balanceData[m] >= 0 ? 'bal-pos' : 'bal-neg'}">${fmtMoney(balanceData[m])}</td>
-        <td>${fmtMoney(cartaoData[m])}</td>
+        <td data-label="Mês" style="font-weight:${isCurrent ? '600' : '400'}">${MONTHS[m]}</td>
+        <td data-label="Ganhos" style="color:var(--success)">${fmtMoney(incomeData[m])}</td>
+        <td data-label="Despesas" style="color:var(--danger)">${fmtMoney(expenseData[m])}</td>
+        <td data-label="Saldo" class="${balanceData[m] >= 0 ? 'bal-pos' : 'bal-neg'}">${fmtMoney(balanceData[m])}</td>
+        <td data-label="Cartão">${fmtMoney(cartaoData[m])}</td>
       </tr>
     `;
   }
   // Total row
   breakdownHTML += `
     <tr style="border-top:2px solid var(--border)">
-      <td style="font-weight:700">TOTAL</td>
-      <td style="font-weight:700;color:var(--success)">${fmtMoney(yearIncome)}</td>
-      <td style="font-weight:700;color:var(--danger)">${fmtMoney(yearExpense)}</td>
-      <td class="${yearBalance >= 0 ? 'bal-pos' : 'bal-neg'}" style="font-weight:700">${fmtMoney(yearBalance)}</td>
-      <td style="font-weight:700">${fmtMoney(yearCartao)}</td>
+      <td data-label="Mês" style="font-weight:700">TOTAL</td>
+      <td data-label="Ganhos" style="font-weight:700;color:var(--success)">${fmtMoney(yearIncome)}</td>
+      <td data-label="Despesas" style="font-weight:700;color:var(--danger)">${fmtMoney(yearExpense)}</td>
+      <td data-label="Saldo" class="${yearBalance >= 0 ? 'bal-pos' : 'bal-neg'}" style="font-weight:700">${fmtMoney(yearBalance)}</td>
+      <td data-label="Cartão" style="font-weight:700">${fmtMoney(yearCartao)}</td>
     </tr>
   `;
   document.getElementById('dashBreakdown').innerHTML = breakdownHTML;
