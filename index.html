@@ -637,7 +637,7 @@ td .badge {
   .persons-summary { gap: 8px; }
   .chart-container { height: 220px; }
   .toggle-type button { padding: 8px; font-size: 0.82rem; }
-  .google-login-btn span, .profile-name { display: none; }
+  .login-btn span, .profile-name { display: none; }
 }
 
 @media (max-width: 400px) {
@@ -696,6 +696,20 @@ td .badge {
 
 .value-input { color: var(--success); font-weight: 600; }
 </style>
+
+<!-- Auth Modal -->
+<div class="auth-modal-overlay" id="authModalOverlay">
+  <div class="auth-modal">
+    <h2 id="authModalTitle">Entrar</h2>
+    <p id="authModalSubtitle">Acesse sua conta para sincronizar seus dados</p>
+    <div class="auth-error" id="authError"></div>
+    <input type="email" id="authEmail" placeholder="seu@email.com" autocomplete="email">
+    <input type="password" id="authPassword" placeholder="Senha" autocomplete="current-password">
+    <button class="auth-submit" id="authSubmitBtn" onclick="handleAuth()">Entrar</button>
+    <button class="auth-toggle" onclick="toggleAuthMode()" id="authToggleBtn">Não tem conta? Criar agora</button>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 /* ===== DASHBOARD ===== */
@@ -846,10 +860,10 @@ td .badge {
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ===== GOOGLE LOGIN ===== */
-.google-login-btn {
-  background: white;
-  color: #1a1a1a;
-  border: 1px solid #ddd;
+.login-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
   border-radius: var(--radius-sm);
   padding: 8px 16px;
   font-size: 0.9rem;
@@ -861,8 +875,35 @@ td .badge {
   transition: all 0.2s;
   white-space: nowrap;
 }
-.google-login-btn:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
-.google-login-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.login-btn:hover { opacity: 0.9; }
+/* Auth modal */
+.auth-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: none; align-items: center; justify-content: center;
+  z-index: 10000; padding: 16px;
+}
+.auth-modal-overlay.active { display: flex; }
+.auth-modal {
+  background: var(--surface); border-radius: var(--radius-lg);
+  padding: 28px; max-width: 380px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.auth-modal h2 { margin: 0 0 6px; font-size: 1.3rem; color: var(--text); }
+.auth-modal p { margin: 0 0 20px; font-size: 0.85rem; color: var(--text-muted); }
+.auth-modal input {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 0.95rem; margin-bottom: 12px;
+  background: var(--bg); color: var(--text); box-sizing: border-box;
+}
+.auth-modal input:focus { outline: none; border-color: var(--primary); }
+.auth-modal button {
+  width: 100%; padding: 12px; border: none; border-radius: var(--radius-sm);
+  font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.auth-modal .auth-submit { background: var(--primary); color: white; margin-bottom: 12px; }
+.auth-modal .auth-submit:hover { opacity: 0.9; }
+.auth-modal .auth-toggle { background: transparent; color: var(--primary); font-size: 0.85rem; }
+.auth-modal .auth-toggle:hover { text-decoration: underline; }
+.auth-error { color: var(--danger); font-size: 0.82rem; margin-bottom: 12px; display: none; }
 .profile-section {
   display: flex;
   align-items: center;
@@ -919,8 +960,8 @@ td .badge {
 .migrate-banner.visible { display: flex; }
 @media (max-width: 640px) {
   .profile-name { display: none; }
-  .google-login-btn span { display: none; }
-  .google-login-btn svg { width: 20px; height: 20px; }
+  .login-btn span { display: none; }
+  .login-btn svg { width: 20px; height: 20px; }
 }
 </style>
 </head>
@@ -2416,51 +2457,21 @@ function initSupabase() {
     return;
   }
 
-  // Debug: log everything about the URL
-  console.log('[AUTH] === PAGE LOAD ===');
-  console.log('[AUTH] Full URL:', window.location.href);
-  console.log('[AUTH] Hash:', window.location.hash || '(empty)');
-  console.log('[AUTH] Search:', window.location.search || '(empty)');
-
-  // Detect OAuth error in URL and show friendly message
-  const urlParams = new URLSearchParams(window.location.search);
-  const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
-  const errorMsg = urlParams.get('error_description') || hashParams.get('error_description');
-  const errorCode = urlParams.get('error_code') || hashParams.get('error_code');
-  if (errorMsg || errorCode) {
-    console.error('[AUTH] OAuth error:', errorCode, errorMsg);
-    let userMessage = 'Erro ao entrar com Google. ';
-    if (errorCode === 'unexpected_failure' || (errorMsg && errorMsg.includes('exchange'))) {
-      userMessage += 'A configuração do Google no Supabase pode estar incorreta. Verifique:\n\n1. No Google Cloud Console → Credenciais → URIs de redirecionamento autorizados:\n   https://dahqnvjyufwcqkuiubjs.supabase.co/auth/v1/callback\n\n2. No Supabase Dashboard → Authentication → Providers → Google:\n   Confirme se Client ID e Client Secret estão corretos.';
-    } else {
-      userMessage += errorMsg || errorCode;
-    }
-    setTimeout(() => alert(userMessage), 500);
-    // Clean the error from URL
-    history.replaceState(null, '', window.location.pathname);
-  }
-
-  // Check localStorage for Supabase auth data (PKCE verifier, tokens, etc)
-  const sbKeys = Object.keys(localStorage).filter(k => k.includes('supabase') || k.includes('sb-'));
-  console.log('[AUTH] localStorage keys:', sbKeys.length ? sbKeys : '(none)');
-
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
+      autoRefreshToken: true
     }
   });
 
-  // Listen for auth changes
+  // Listen for auth changes (login, logout, session restore)
   supabaseClient.auth.onAuthStateChange((event, session) => {
-    console.log('[AUTH] Event:', event, '| Session:', session ? 'YES (' + (session.user?.email || 'unknown') + ')' : 'NO');
+    console.log('[AUTH]', event, session ? 'YES' : 'NO');
 
     if (session && session.user) {
       currentUser = session.user;
       isOnlineMode = true;
       updateAuthUI();
-      cleanAuthUrl();
       loadDataFromSupabase();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
@@ -2474,73 +2485,86 @@ function initSupabase() {
       updateAuthUI();
     }
   });
-
-  // Check if URL has auth params (from OAuth redirect)
-  const hasHashToken = window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token'));
-  const hasCodeParam = window.location.search && window.location.search.includes('code=');
-  const hasAuthInUrl = hasHashToken || hasCodeParam;
-
-  console.log('[AUTH] Has hash token:', hasHashToken, '| Has code param:', hasCodeParam);
-
-  if (hasAuthInUrl) {
-    console.log('[AUTH] Auth params found in URL! Waiting for Supabase to process...');
-    // Multiple retry attempts with increasing delay
-    [500, 1000, 2000, 4000].forEach(delay => {
-      setTimeout(async () => {
-        if (currentUser) return; // Already logged in
-        console.log(`[AUTH] Retry at ${delay}ms...`);
-        try {
-          const { data: { session }, error } = await supabaseClient.auth.getSession();
-          if (error) console.log(`[AUTH] ${delay}ms error:`, error.message || error);
-          if (session && session.user) {
-            console.log(`[AUTH] ✅ Session found at ${delay}ms!`);
-            currentUser = session.user;
-            isOnlineMode = true;
-            updateAuthUI();
-            cleanAuthUrl();
-            loadDataFromSupabase();
-          } else {
-            console.log(`[AUTH] ${delay}ms: still no session`);
-          }
-        } catch (e) {
-          console.log(`[AUTH] ${delay}ms exception:`, e.message);
-        }
-      }, delay);
-    });
-  } else {
-    console.log('[AUTH] No auth params in URL. Normal page load.');
-    // Check for stored session (returning user)
-    setTimeout(async () => {
-      if (!currentUser) {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (session && session.user) {
-          console.log('[AUTH] Stored session found');
-          currentUser = session.user;
-          isOnlineMode = true;
-          updateAuthUI();
-          loadDataFromSupabase();
-        } else {
-          updateAuthUI();
-        }
-      }
-    }, 500);
-  }
 }
 
-async function loginWithGoogle() {
-  if (!supabaseClient) {
-    alert('Carregando... tente novamente em 2 segundos.');
+
+let isSignUpMode = false;
+
+function showAuthModal() {
+  if (!supabaseClient) { alert('Carregando... tente novamente.'); return; }
+  document.getElementById('authModalOverlay').classList.add('active');
+  document.getElementById('authEmail').focus();
+}
+
+function hideAuthModal() {
+  document.getElementById('authModalOverlay').classList.remove('active');
+  document.getElementById('authEmail').value = '';
+  document.getElementById('authPassword').value = '';
+  document.getElementById('authError').style.display = 'none';
+}
+
+function toggleAuthMode() {
+  isSignUpMode = !isSignUpMode;
+  document.getElementById('authModalTitle').textContent = isSignUpMode ? 'Criar Conta' : 'Entrar';
+  document.getElementById('authModalSubtitle').textContent = isSignUpMode
+    ? 'Crie sua conta para salvar seus dados na nuvem'
+    : 'Acesse sua conta para sincronizar seus dados';
+  document.getElementById('authSubmitBtn').textContent = isSignUpMode ? 'Criar Conta' : 'Entrar';
+  document.getElementById('authToggleBtn').textContent = isSignUpMode
+    ? 'Já tem conta? Fazer login'
+    : 'Não tem conta? Criar agora';
+  document.getElementById('authError').style.display = 'none';
+}
+
+async function handleAuth() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errorEl = document.getElementById('authError');
+
+  if (!email || !password) {
+    errorEl.textContent = 'Preencha email e senha.';
+    errorEl.style.display = 'block';
     return;
   }
-  const redirectTo = window.location.origin + window.location.pathname;
-  const { data, error } = await supabaseClient.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: redirectTo }
-  });
-  if (error) alert('Erro ao entrar: ' + error.message);
+  if (password.length < 6) {
+    errorEl.textContent = 'A senha precisa ter no mínimo 6 caracteres.';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  const btn = document.getElementById('authSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = isSignUpMode ? 'Criando...' : 'Entrando...';
+  errorEl.style.display = 'none';
+
+  try {
+    let result;
+    if (isSignUpMode) {
+      result = await supabaseClient.auth.signUp({ email, password });
+    } else {
+      result = await supabaseClient.auth.signInWithPassword({ email, password });
+    }
+
+    if (result.error) {
+      let msg = result.error.message;
+      if (msg.includes('Invalid login credentials')) msg = 'Email ou senha incorretos.';
+      if (msg.includes('already registered')) msg = 'Este email já está cadastrado. Faça login.';
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+    } else {
+      hideAuthModal();
+      // onAuthStateChange will handle the rest
+    }
+  } catch (e) {
+    errorEl.textContent = 'Erro: ' + e.message;
+    errorEl.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.textContent = isSignUpMode ? 'Criar Conta' : 'Entrar';
 }
 
-async function logoutGoogle() {
+async function logoutUser() {
   if (!supabaseClient) return;
   await supabaseClient.auth.signOut();
   currentUser = null;
@@ -2550,38 +2574,27 @@ async function logoutGoogle() {
   renderAll();
 }
 
-// Clean URL of auth tokens after successful login (prevents issues on refresh)
-function cleanAuthUrl() {
-  if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token'))) {
-    history.replaceState(null, '', window.location.pathname);
-  }
-  if (window.location.search && window.location.search.includes('code=')) {
-    history.replaceState(null, '', window.location.pathname);
-  }
-}
-
 function updateAuthUI() {
   const container = document.getElementById('authSection');
   if (!container) return;
   if (currentUser) {
-    const name = currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'Usuário';
-    const avatar = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || '';
-    const firstName = name.split(' ')[0];
+    const email = currentUser.email || 'Usuário';
+    const firstName = email.split('@')[0];
     container.innerHTML = `
-      ${avatar ? `<img src="${avatar}" alt="Perfil" class="profile-pic" title="${name}">` : ''}
-      <span class="profile-name">${firstName}</span>
-      <button class="logout-btn" onclick="logoutGoogle()" title="Sair">Sair</button>
+      <span class="profile-name" title="${email}">${firstName}</span>
+      <button class="logout-btn" onclick="logoutUser()" title="Sair">Sair</button>
     `;
-    // Show sync badge
     const syncBadge = document.getElementById('syncBadge');
-    if (syncBadge) syncBadge.innerHTML = '<span class="sync-badge online">☁️ Sincronizado</span>';
+    if (syncBadge) syncBadge.innerHTML = '<span class="sync-badge online">Sincronizado</span>';
   } else {
     container.innerHTML = `
-      <button class="google-login-btn" onclick="loginWithGoogle()">
-        <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      <button class="login-btn" onclick="showAuthModal()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         <span>Entrar</span>
       </button>
     `;
+    const syncBadge = document.getElementById('syncBadge');
+    if (syncBadge) syncBadge.innerHTML = '<span class="sync-badge offline">Local</span>';
   }
 }
 
@@ -2906,6 +2919,19 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
   o.addEventListener('click', (e) => {
     if (e.target === o) o.classList.remove('active');
   });
+});
+
+// Close auth modal on overlay click
+document.getElementById('authModalOverlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) hideAuthModal();
+});
+
+// Enter key to submit auth form
+document.getElementById('authPassword').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') handleAuth();
+});
+document.getElementById('authEmail').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('authPassword').focus();
 });
 </script>
 </body>
