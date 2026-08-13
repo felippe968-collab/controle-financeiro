@@ -477,7 +477,19 @@ td .badge {
   transition: opacity 0.2s;
 }
 
-.person-tag .remove-person:hover { opacity: 1; }
+.person-tag .edit-person {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.person-tag .edit-person:hover { opacity: 1; }
+.person-tag .person-name-text { user-select: none; }
 
 .add-person-inline {
   display: flex;
@@ -1471,7 +1483,7 @@ td .badge {
 <script>
 // ===== GLOBAL STATE =====
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const TITULAR = 'Alex';
+function getTitular() { return db.people[0] || 'Pessoa 1'; }
 const STORAGE_KEY = 'finance_control_data_v2';
 
 let _now = new Date();
@@ -1486,7 +1498,7 @@ let db = {
   bills: [],
   credits: [],
   incomes: [],
-  people: ['Alex', 'Bruna', 'Diego', 'Lia', 'Otávio', 'Outra Pessoa']
+  people: ['Pessoa 1', 'Pessoa 2', 'Pessoa 3', 'Pessoa 4', 'Pessoa 5']
 };
 
 // ===== STORAGE =====
@@ -1497,8 +1509,8 @@ function loadDB() {
       const parsed = JSON.parse(raw);
       db = { ...db, ...parsed };
       // Ensure people array exists and titular is always present
-      if (!db.people || !Array.isArray(db.people)) db.people = ['Alex', 'Bruna', 'Diego', 'Lia', 'Otávio', 'Outra Pessoa'];
-      if (!db.people.includes(TITULAR)) db.people.unshift(TITULAR);
+      if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Pessoa 1', 'Pessoa 2', 'Pessoa 3', 'Pessoa 4', 'Pessoa 5'];
+      
     }
   } catch(e) { console.warn('Erro ao carregar dados', e); }
 }
@@ -1530,9 +1542,9 @@ function fmtDate(d) {
 function renderPeopleManager() {
   const container = document.getElementById('peopleManager');
   let html = db.people.map(person => `
-    <span class="person-tag ${person === TITULAR ? 'titular' : ''}">
-      ${person}${person === TITULAR ? ' ★' : ''}
-      ${person !== TITULAR ? `<button class="remove-person" onclick="removePerson('${person.replace(/'/g, "\\'")}')" title="Remover">×</button>` : ''}
+    <span class="person-tag ${person === getTitular() ? 'titular' : ''}">
+      ${person}${person === getTitular() ? ' ★' : ''}
+      ${person !== getTitular() ? `<button class="remove-person" onclick="removePerson('${person.replace(/'/g, "\\'")}')" title="Remover">×</button>` : ''}
     </span>
   `).join('');
   html += `
@@ -1557,26 +1569,51 @@ function addPerson() {
   renderPeopleManager();
   updateCreditPersonDropdown();
   renderCredits();
+  renderSummary();
 }
 
-function removePerson(name) {
-  // Check if person has credit purchases
-  const hasCredits = db.credits.some(c => c.person === name);
-  if (hasCredits) {
-    if (!confirm(`"${name}" tem compras registradas. Remover mesmo assim? As compras desta pessoa continuam, mas a pessoa sairá da lista de cadastro.`)) return;
+function editPerson(idx) {
+  const oldName = db.people[idx];
+  if (!oldName) return;
+  const newName = prompt('Editar nome da pessoa:', oldName);
+  if (newName === null) return; // cancelled
+  const trimmed = newName.trim();
+  if (!trimmed) { alert('Nome não pode ficar vazio!'); return; }
+  if (trimmed !== oldName && db.people.some(p => p.toLowerCase() === trimmed.toLowerCase())) {
+    alert('Já existe uma pessoa com esse nome!');
+    return;
   }
-  db.people = db.people.filter(p => p !== name);
+  // Update the person name in credits too
+  db.credits.forEach(c => { if (c.person === oldName) c.person = trimmed; });
+  db.people[idx] = trimmed;
   saveDB();
   renderPeopleManager();
   updateCreditPersonDropdown();
   renderCredits();
+  renderSummary();
+}
+
+function removePerson(idx) {
+  const name = db.people[idx];
+  if (!name) return;
+  if (db.people.length <= 1) { alert('Você precisa ter pelo menos uma pessoa!'); return; }
+  const hasCredits = db.credits.some(c => c.person === name);
+  if (hasCredits) {
+    if (!confirm(`"${name}" tem compras registradas. Remover mesmo assim? As compras continuarão, mas a pessoa sairá da lista.`)) return;
+  }
+  db.people.splice(idx, 1);
+  saveDB();
+  renderPeopleManager();
+  updateCreditPersonDropdown();
+  renderCredits();
+  renderSummary();
 }
 
 function updateCreditPersonDropdown() {
   const select = document.getElementById('creditPerson');
   const currentVal = select ? select.value : '';
   if (select) {
-    select.innerHTML = db.people.map(p => `<option value="${p}">${p}${p === TITULAR ? ' (Titular)' : ''}</option>`).join('');
+    select.innerHTML = db.people.map(p => `<option value="${p}">${p}${p === getTitular() ? ' (Titular)' : ''}</option>`).join('');
     if (currentVal && db.people.includes(currentVal)) select.value = currentVal;
   }
 }
@@ -1912,7 +1949,7 @@ function openCreditModal() {
   document.getElementById('creditInstallments').value = '1';
   document.getElementById('creditDate').value = new Date().toISOString().split('T')[0];
   updateCreditPersonDropdown();
-  document.getElementById('creditPerson').value = TITULAR;
+  document.getElementById('creditPerson').value = getTitular();
   openModal('creditModal');
   document.getElementById('creditDesc').focus();
 }
@@ -2001,7 +2038,7 @@ function renderCredits() {
     <tr>
       <td data-label="Compra" style="font-weight:600;font-size:.95rem">${c.desc}</td>
       <td data-label="Valor" style="font-weight:700;color:var(--primary-hover);font-size:1.05rem">${fmtMoney(c.parcelValue)}</td>
-      <td data-label="Quem Comprou">${c.person === TITULAR ? `<strong style="color:var(--success)">${c.person} (Titular)</strong>` : c.person}</td>
+      <td data-label="Quem Comprou">${c.person === getTitular() ? `<strong style="color:var(--success)">${c.person} (Titular)</strong>` : c.person}</td>
       <td data-label="Parcela"><span class="badge-parcel">${c.installments > 1 ? c.currentParcel + '/' + c.installments : 'À vista'}</span></td>
       <td data-label="Data" style="color:var(--text-muted)">${fmtDate(c.date)}</td>
       <td data-label="Ações" style="padding-top:8px;border-top:1px solid var(--border)">
@@ -2029,8 +2066,8 @@ function renderCredits() {
   const summary = document.getElementById('personsSummary');
   const allPeopleWithTotals = Object.keys(personTotals).filter(p => personTotals[p] > 0);
   summary.innerHTML = allPeopleWithTotals.map(p => `
-    <div class="person-card ${p === TITULAR ? 'titular' : ''}">
-      <div class="pname">${p}${p === TITULAR ? ' (Titular)' : ''}</div>
+    <div class="person-card ${p === getTitular() ? 'titular' : ''}">
+      <div class="pname">${p}${p === getTitular() ? ' (Titular)' : ''}</div>
       <div class="pvalue">${fmtMoney(personTotals[p])}</div>
     </div>
   `).join('');
@@ -2126,7 +2163,7 @@ function renderSummary() {
   const totalIncome = incomes.reduce((s, i) => s + i.value, 0);
   const totalBills = bills.reduce((s, b) => s + b.monthlyValue, 0);
   const titularCredit = credits
-    .filter(c => c.person === TITULAR)
+    .filter(c => c.person === getTitular())
     .reduce((s, c) => s + c.parcelValue, 0);
   const totalExpenses = totalBills + titularCredit;
   const balance = totalIncome - totalExpenses;
@@ -2176,7 +2213,7 @@ function renderDashboard() {
 
     // Titular credit
     const credits = getCreditsForMonth(m, year);
-    const titularCredit = credits.filter(c => c.person === TITULAR).reduce((s, c) => s + c.parcelValue, 0);
+    const titularCredit = credits.filter(c => c.person === getTitular()).reduce((s, c) => s + c.parcelValue, 0);
     const totalCartao = credits.reduce((s, c) => s + c.parcelValue, 0);
 
     const expTotal = billsTotal + titularCredit;
@@ -2192,7 +2229,7 @@ function renderDashboard() {
     bills.forEach(b => {
       categoryTotals[b.category] = (categoryTotals[b.category] || 0) + b.monthlyValue;
     });
-    credits.filter(c => c.person === TITULAR).forEach(c => {
+    credits.filter(c => c.person === getTitular()).forEach(c => {
       categoryTotals['Cartão (Titular)'] = (categoryTotals['Cartão (Titular)'] || 0) + c.parcelValue;
     });
 
@@ -2730,8 +2767,8 @@ function importLocalJSON(event) {
       const data = JSON.parse(e.target.result);
       if (confirm('Importar dados? Isso vai SUBSTITUIR os dados atuais.')) {
         db = { ...db, ...data };
-        if (!db.people || !Array.isArray(db.people)) db.people = ['Alex', 'Bruna', 'Diego', 'Lia', 'Otávio', 'Outra Pessoa'];
-        if (!db.people.includes(TITULAR)) db.people.unshift(TITULAR);
+        if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Pessoa 1', 'Pessoa 2', 'Pessoa 3', 'Pessoa 4', 'Pessoa 5'];
+        
         saveDB();
         renderAll();
         renderPeopleManager();
@@ -2745,7 +2782,7 @@ function importLocalJSON(event) {
 function clearAllData() {
   if (!confirm('⚠️ APAGAR TODOS os dados? Esta ação não pode ser desfeita!')) return;
   if (!confirm('Tem certeza absoluta? Todos os gastos, contas, cartão e ganhos serão perdidos!')) return;
-  db = { bills: [], credits: [], incomes: [], people: ['Alex', 'Bruna', 'Diego', 'Lia', 'Otávio', 'Outra Pessoa'] };
+  db = { bills: [], credits: [], incomes: [], people: ['Pessoa 1', 'Pessoa 2', 'Pessoa 3', 'Pessoa 4', 'Pessoa 5'] };
   saveDB();
   renderAll();
   renderPeopleManager();
