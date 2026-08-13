@@ -663,8 +663,8 @@ td .badge {
 
 .tab:hover { color: var(--text); }
 
-.tab-content { display: none; }
-.tab-content.active { display: block; }
+.tab-section { display: block; }
+.tab-section + .tab-section { margin-top: 24px; }
 
 /* ===== ACTION ICONS ===== */
 .icon-btn {
@@ -956,16 +956,32 @@ td .badge {
   </div>
 </div>
 
-<!-- ===== TABS ===== -->
-<div class="tabs">
-  <button class="tab active" onclick="switchTab('income', event)">💵 Ganhos</button>
-  <button class="tab" onclick="switchTab('bills', event)">📋 Contas Mensais</button>
-  <button class="tab" onclick="switchTab('credit', event)">💳 Cartão de Crédito</button>
-  <button class="tab" onclick="switchTab('dashboard', event)">📊 Dashboard</button>
+<!-- ===== TAB: INCOME ===== -->
+<div class="tab-section" id="tab-income">
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title"><span class="icon"></span> Ganhos e Receitas do Mês</div>
+      <button class="btn" onclick="openIncomeModal()">+ Novo Ganho</button>
+    </div>
+    <div class="table-wrap">
+      <table id="incomeTable">
+        <thead>
+          <tr>
+            <th>Descrição</th>
+            <th>Valor</th>
+            <th>Data</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="incomeBody"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="incomeEmpty">Nenhum ganho cadastrado neste mês.</div>
+  </div>
 </div>
 
 <!-- ===== TAB: BILLS ===== -->
-<div class="tab-content" id="tab-bills">
+<div class="tab-section" id="tab-bills">
   <div class="section">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Contas Fixas e Parceladas</div>
@@ -992,7 +1008,7 @@ td .badge {
 </div>
 
 <!-- ===== TAB: CREDIT CARD ===== -->
-<div class="tab-content" id="tab-credit">
+<div class="tab-section" id="tab-credit">
   <div class="section">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Compras do Cartão</div>
@@ -1031,32 +1047,8 @@ td .badge {
   </div>
 </div>
 
-<!-- ===== TAB: INCOME ===== -->
-<div class="tab-content active" id="tab-income">
-  <div class="section">
-    <div class="section-header">
-      <div class="section-title"><span class="icon"></span> Ganhos e Receitas do Mês</div>
-      <button class="btn" onclick="openIncomeModal()">+ Novo Ganho</button>
-    </div>
-    <div class="table-wrap">
-      <table id="incomeTable">
-        <thead>
-          <tr>
-            <th>Descrição</th>
-            <th>Valor</th>
-            <th>Data</th>
-            <th>Ações</th>
-          </tr>
-        </thead>
-        <tbody id="incomeBody"></tbody>
-      </table>
-    </div>
-    <div class="empty-state" id="incomeEmpty">Nenhum ganho cadastrado neste mês.</div>
-  </div>
-</div>
-
 <!-- ===== TAB: DASHBOARD ===== -->
-<div class="tab-content" id="tab-dashboard">
+<div class="tab-section" id="tab-dashboard">
   <div class="section">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Panorama Anual</div>
@@ -1479,7 +1471,7 @@ td .badge {
 <script>
 // ===== GLOBAL STATE =====
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const TITULAR = 'Felippe';
+const TITULAR = 'Alex';
 const STORAGE_KEY = 'finance_control_data_v2';
 
 let _now = new Date();
@@ -1494,7 +1486,7 @@ let db = {
   bills: [],
   credits: [],
   incomes: [],
-  people: ['Felippe', 'Mãe', 'Thayná', 'Yan', 'Yasmin', 'Outra Pessoa']
+  people: ['Alex', 'Bruna', 'Diego', 'Lia', 'Otávio', 'Outra Pessoa']
 };
 
 // ===== STORAGE =====
@@ -1505,7 +1497,7 @@ function loadDB() {
       const parsed = JSON.parse(raw);
       db = { ...db, ...parsed };
       // Ensure people array exists and titular is always present
-      if (!db.people || !Array.isArray(db.people)) db.people = ['Felippe', 'Mãe', 'Thayná', 'Yan', 'Yasmin', 'Outra Pessoa'];
+      if (!db.people || !Array.isArray(db.people)) db.people = ['Alex', 'Bruna', 'Diego', 'Lia', 'Otávio', 'Outra Pessoa'];
       if (!db.people.includes(TITULAR)) db.people.unshift(TITULAR);
     }
   } catch(e) { console.warn('Erro ao carregar dados', e); }
@@ -2738,7 +2730,7 @@ function importLocalJSON(event) {
       const data = JSON.parse(e.target.result);
       if (confirm('Importar dados? Isso vai SUBSTITUIR os dados atuais.')) {
         db = { ...db, ...data };
-        if (!db.people || !Array.isArray(db.people)) db.people = ['Felippe', 'Mãe', 'Thayná', 'Yan', 'Yasmin', 'Outra Pessoa'];
+        if (!db.people || !Array.isArray(db.people)) db.people = ['Alex', 'Bruna', 'Diego', 'Lia', 'Otávio', 'Outra Pessoa'];
         if (!db.people.includes(TITULAR)) db.people.unshift(TITULAR);
         saveDB();
         renderAll();
@@ -2753,7 +2745,7 @@ function importLocalJSON(event) {
 function clearAllData() {
   if (!confirm('⚠️ APAGAR TODOS os dados? Esta ação não pode ser desfeita!')) return;
   if (!confirm('Tem certeza absoluta? Todos os gastos, contas, cartão e ganhos serão perdidos!')) return;
-  db = { bills: [], credits: [], incomes: [], people: ['Felippe', 'Mãe', 'Thayná', 'Yan', 'Yasmin', 'Outra Pessoa'] };
+  db = { bills: [], credits: [], incomes: [], people: ['Alex', 'Bruna', 'Diego', 'Lia', 'Otávio', 'Outra Pessoa'] };
   saveDB();
   renderAll();
   renderPeopleManager();
