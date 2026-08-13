@@ -696,6 +696,7 @@ td .badge {
 
 .value-input { color: var(--success); font-weight: 600; }
 </style>
+</div><!-- /appContent -->
 
 <!-- Auth Modal -->
 <div class="auth-modal-overlay" id="authModalOverlay">
@@ -878,15 +879,24 @@ td .badge {
 .login-btn:hover { opacity: 0.9; }
 /* Auth modal */
 .auth-modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
   display: none; align-items: center; justify-content: center;
   z-index: 10000; padding: 16px;
 }
 .auth-modal-overlay.active { display: flex; }
 .auth-modal {
   background: var(--surface); border-radius: var(--radius-lg);
-  padding: 28px; max-width: 380px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  padding: 32px 28px; max-width: 380px; width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  animation: authSlideIn 0.3s ease;
 }
+@keyframes authSlideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+/* Blur effect on app content when not logged in */
+.app-blurred { filter: blur(8px); pointer-events: none; user-select: none; }
 .auth-modal h2 { margin: 0 0 6px; font-size: 1.3rem; color: var(--text); }
 .auth-modal p { margin: 0 0 20px; font-size: 0.85rem; color: var(--text-muted); }
 .auth-modal input {
@@ -966,6 +976,7 @@ td .badge {
 </style>
 </head>
 <body>
+<div id="appContent">
 
 <!-- ===== HEADER ===== -->
 <div class="header">
@@ -2491,13 +2502,15 @@ function initSupabase() {
 let isSignUpMode = false;
 
 function showAuthModal() {
-  if (!supabaseClient) { alert('Carregando... tente novamente.'); return; }
+  if (!supabaseClient) { setTimeout(showAuthModal, 500); return; }
   document.getElementById('authModalOverlay').classList.add('active');
+  document.getElementById('appContent').classList.add('app-blurred');
   document.getElementById('authEmail').focus();
 }
 
 function hideAuthModal() {
   document.getElementById('authModalOverlay').classList.remove('active');
+  document.getElementById('appContent').classList.remove('app-blurred');
   document.getElementById('authEmail').value = '';
   document.getElementById('authPassword').value = '';
   document.getElementById('authError').style.display = 'none';
@@ -2587,14 +2600,11 @@ function updateAuthUI() {
     const syncBadge = document.getElementById('syncBadge');
     if (syncBadge) syncBadge.innerHTML = '<span class="sync-badge online">Sincronizado</span>';
   } else {
-    container.innerHTML = `
-      <button class="login-btn" onclick="showAuthModal()">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-        <span>Entrar</span>
-      </button>
-    `;
+    container.innerHTML = '';
     const syncBadge = document.getElementById('syncBadge');
     if (syncBadge) syncBadge.innerHTML = '<span class="sync-badge offline">Local</span>';
+    // Show the login gate automatically
+    showAuthModal();
   }
 }
 
@@ -2921,10 +2931,7 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
   });
 });
 
-// Close auth modal on overlay click
-document.getElementById('authModalOverlay').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) hideAuthModal();
-});
+// Auth gate: cannot dismiss by clicking overlay — must login
 
 // Enter key to submit auth form
 document.getElementById('authPassword').addEventListener('keydown', (e) => {
