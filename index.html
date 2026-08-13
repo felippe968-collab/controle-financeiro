@@ -1541,10 +1541,11 @@ function fmtDate(d) {
 // ===== PEOPLE MANAGEMENT =====
 function renderPeopleManager() {
   const container = document.getElementById('peopleManager');
-  let html = db.people.map(person => `
-    <span class="person-tag ${person === getTitular() ? 'titular' : ''}">
-      ${person}${person === getTitular() ? ' ★' : ''}
-      ${person !== getTitular() ? `<button class="remove-person" onclick="removePerson('${person.replace(/'/g, "\\'")}')" title="Remover">×</button>` : ''}
+  let html = db.people.map((person, idx) => `
+    <span class="person-tag ${idx === 0 ? 'titular' : ''}">
+      <span class="person-name-text">${person}${idx === 0 ? ' \u2605' : ''}</span>
+      <button class="edit-person" onclick="editPerson(${idx})" title="Editar nome">\u270f\ufe0f</button>
+      ${db.people.length > 1 ? `<button class="remove-person" onclick="removePerson(${idx})" title="Remover">\u00d7</button>` : ''}
     </span>
   `).join('');
   html += `
