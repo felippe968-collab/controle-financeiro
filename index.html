@@ -2413,38 +2413,59 @@ let isOnlineMode = false;
 function initSupabase() {
   if (typeof window.supabase === 'undefined') return;
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true }
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
   });
 
-  // Listen for auth changes
+  let authInitialized = false;
+
+  // Listen for auth changes — handles OAuth redirect callback and session restore
   supabaseClient.auth.onAuthStateChange((event, session) => {
+    console.log('[AUTH]', event, session ? 'has session' : 'no session');
+
     if (session && session.user) {
+      // User is logged in (either from OAuth callback or restored session)
       currentUser = session.user;
       isOnlineMode = true;
       updateAuthUI();
+      cleanAuthUrl();
       loadDataFromSupabase();
-    } else {
+    } else if (event === 'SIGNED_OUT') {
+      // User explicitly signed out
       currentUser = null;
       isOnlineMode = false;
       updateAuthUI();
       loadDB();
       renderAll();
+    } else if (event === 'INITIAL_SESSION' && !session) {
+      // Initial check with no session — just show login button, don't reset data
+      // (hash detection might still be processing if returning from OAuth)
+      currentUser = null;
+      isOnlineMode = false;
+      updateAuthUI();
     }
   });
 
-  // Check existing session
-  supabaseClient.auth.getSession().then(({
-    data: { session }
-  }) => {
-    if (session && session.user) {
-      currentUser = session.user;
-      isOnlineMode = true;
-      updateAuthUI();
-      loadDataFromSupabase();
-    } else {
-      updateAuthUI();
+  // Fallback: check session after a short delay (handles race condition with hash detection)
+  setTimeout(async () => {
+    if (!currentUser) {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (session && session.user) {
+        console.log('[AUTH] Fallback: session found');
+        currentUser = session.user;
+        isOnlineMode = true;
+        updateAuthUI();
+        cleanAuthUrl();
+        loadDataFromSupabase();
+      } else {
+        console.log('[AUTH] Fallback: no session');
+        updateAuthUI();
+      }
     }
-  });
+  }, 1500);
 }
 
 async function loginWithGoogle() {
@@ -2468,6 +2489,16 @@ async function logoutGoogle() {
   updateAuthUI();
   loadDB();
   renderAll();
+}
+
+// Clean URL of auth tokens after successful login (prevents issues on refresh)
+function cleanAuthUrl() {
+  if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token'))) {
+    history.replaceState(null, '', window.location.pathname);
+  }
+  if (window.location.search && window.location.search.includes('code=')) {
+    history.replaceState(null, '', window.location.pathname);
+  }
 }
 
 function updateAuthUI() {
