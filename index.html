@@ -720,6 +720,15 @@ td .badge {
     <input type="password" id="authPassword" placeholder="Senha" autocomplete="current-password">
     <button class="auth-submit" id="authSubmitBtn" onclick="handleAuth()">Entrar</button>
     <button class="auth-toggle" onclick="toggleAuthMode()" id="authToggleBtn">Não tem conta? Criar agora</button>
+    <button class="auth-toggle" id="forgotPasswordBtn" onclick="showForgotPassword()" style="margin-top:8px">Esqueci a senha</button>
+  </div>
+  <!-- Password Reset Form (shown when recovering) -->
+  <div class="auth-modal" id="resetPasswordForm" style="display:none">
+    <h2>Nova Senha</h2>
+    <p>Digite sua nova senha abaixo</p>
+    <div class="auth-error" id="resetError"></div>
+    <input type="password" id="resetNewPassword" placeholder="Nova senha" autocomplete="new-password">
+    <button class="auth-submit" onclick="updatePassword()" style="margin-bottom:0">Salvar nova senha</button>
   </div>
 </div>
 
@@ -2488,9 +2497,15 @@ function initSupabase() {
     }
   });
 
-  // Listen for auth changes (login, logout, session restore)
+  // Listen for auth changes (login, logout, session restore, password recovery)
   supabaseClient.auth.onAuthStateChange((event, session) => {
     console.log('[AUTH]', event, session ? 'YES' : 'NO');
+
+    if (event === 'PASSWORD_RECOVERY') {
+      // User clicked the reset link in their email — show new password form
+      showResetPasswordForm();
+      return;
+    }
 
     if (session && session.user) {
       currentUser = session.user;
@@ -2640,6 +2655,99 @@ async function handleAuth() {
 
   btn.disabled = false;
   btn.textContent = isSignUpMode ? 'Criar Conta' : 'Entrar';
+}
+
+// ===== FORGOT PASSWORD =====
+function showForgotPassword() {
+  const email = document.getElementById('authEmail').value.trim();
+  if (!email) {
+    const err = document.getElementById('authError');
+    err.textContent = 'Digite seu email acima e depois clique em "Esqueci a senha".';
+    err.style.display = 'block';
+    document.getElementById('authEmail').focus();
+    return;
+  }
+  sendPasswordReset(email);
+}
+
+async function sendPasswordReset(email) {
+  const btn = document.getElementById('forgotPasswordBtn');
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+
+  try {
+    const redirectTo = window.location.origin + window.location.pathname;
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectTo
+    });
+
+    if (error) {
+      const err = document.getElementById('authError');
+      err.textContent = error.message.includes('rate limit')
+        ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
+        : 'Erro: ' + error.message;
+      err.style.display = 'block';
+    } else {
+      const err = document.getElementById('authError');
+      err.style.display = 'none';
+      alert('Email de recuperação enviado! Verifique sua caixa de entrada (e o spam).');
+    }
+  } catch (e) {
+    const err = document.getElementById('authError');
+    err.textContent = 'Erro: ' + e.message;
+    err.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Esqueci a senha';
+}
+
+function showResetPasswordForm() {
+  // Hide the normal login form, show the reset form
+  document.querySelector('.auth-modal:not(#resetPasswordForm)').style.display = 'none';
+  document.getElementById('resetPasswordForm').style.display = 'block';
+  document.getElementById('authModalOverlay').classList.add('active');
+  document.getElementById('appContent').classList.add('app-blurred');
+  document.getElementById('resetNewPassword').focus();
+}
+
+async function updatePassword() {
+  const newPassword = document.getElementById('resetNewPassword').value;
+  const errEl = document.getElementById('resetError');
+
+  if (!newPassword || newPassword.length < 6) {
+    errEl.textContent = 'A senha precisa ter no mínimo 6 caracteres.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  errEl.style.display = 'none';
+  const btn = document.querySelector('#resetPasswordForm .auth-submit');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+    if (error) {
+      errEl.textContent = 'Erro: ' + error.message;
+      errEl.style.display = 'block';
+    } else {
+      // Success — hide reset form, let normal login proceed
+      alert('Senha alterada com sucesso! Faça login com sua nova senha.');
+      document.getElementById('resetPasswordForm').style.display = 'none';
+      document.querySelector('.auth-modal:not(#resetPasswordForm)').style.display = 'block';
+      document.getElementById('resetNewPassword').value = '';
+      // Sign out the recovery session so user logs in fresh
+      await supabaseClient.auth.signOut();
+      document.getElementById('authEmail').focus();
+    }
+  } catch (e) {
+    errEl.textContent = 'Erro: ' + e.message;
+    errEl.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Salvar nova senha';
 }
 
 async function logoutUser() {
