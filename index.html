@@ -704,6 +704,18 @@ td .badge {
     <h2 id="authModalTitle">Entrar</h2>
     <p id="authModalSubtitle">Acesse sua conta para sincronizar seus dados</p>
     <div class="auth-error" id="authError"></div>
+    <div id="authSignupFields" style="display:none">
+      <input type="text" id="authName" placeholder="Seu nome" autocomplete="name" style="margin-bottom:12px">
+      <div style="margin-bottom:12px">
+        <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:6px">Foto (opcional)</label>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div id="authPhotoPreview" style="width:48px;height:48px;border-radius:50%;background:var(--bg);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.4"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+          </div>
+          <input type="file" id="authPhoto" accept="image/*" style="font-size:0.8rem;flex:1;padding:6px" onchange="previewAuthPhoto(this)">
+        </div>
+      </div>
+    </div>
     <input type="email" id="authEmail" placeholder="seu@email.com" autocomplete="email">
     <input type="password" id="authPassword" placeholder="Senha" autocomplete="current-password">
     <button class="auth-submit" id="authSubmitBtn" onclick="handleAuth()">Entrar</button>
@@ -905,6 +917,7 @@ td .badge {
   background: var(--bg); color: var(--text); box-sizing: border-box;
 }
 .auth-modal input:focus { outline: none; border-color: var(--primary); }
+.auth-modal input[type="file"] { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
 .auth-modal button {
   width: 100%; padding: 12px; border: none; border-radius: var(--radius-sm);
   font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
@@ -2526,7 +2539,28 @@ function toggleAuthMode() {
   document.getElementById('authToggleBtn').textContent = isSignUpMode
     ? 'Já tem conta? Fazer login'
     : 'Não tem conta? Criar agora';
+  document.getElementById('authSignupFields').style.display = isSignUpMode ? 'block' : 'none';
   document.getElementById('authError').style.display = 'none';
+}
+
+// Photo preview in signup form
+let authPhotoDataUrl = null;
+function previewAuthPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    document.getElementById('authError').textContent = 'Foto muito grande. Máximo 2MB.';
+    document.getElementById('authError').style.display = 'block';
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    authPhotoDataUrl = e.target.result;
+    const preview = document.getElementById('authPhotoPreview');
+    preview.innerHTML = `<img src="${authPhotoDataUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  };
+  reader.readAsDataURL(file);
 }
 
 async function handleAuth() {
@@ -2545,6 +2579,17 @@ async function handleAuth() {
     return;
   }
 
+  // In signup mode, validate name
+  let fullName = null;
+  if (isSignUpMode) {
+    fullName = document.getElementById('authName').value.trim();
+    if (!fullName) {
+      errorEl.textContent = 'Digite seu nome.';
+      errorEl.style.display = 'block';
+      return;
+    }
+  }
+
   const btn = document.getElementById('authSubmitBtn');
   btn.disabled = true;
   btn.textContent = isSignUpMode ? 'Criando...' : 'Entrando...';
@@ -2553,7 +2598,26 @@ async function handleAuth() {
   try {
     let result;
     if (isSignUpMode) {
-      result = await supabaseClient.auth.signUp({ email, password });
+      const options = {
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            ...(authPhotoDataUrl ? { avatar_url: authPhotoDataUrl } : {})
+          }
+        }
+      };
+      result = await supabaseClient.auth.signUp(options);
+      // Also update user metadata after signup in case signUp doesn't persist it
+      if (!result.error && result.data?.user) {
+        await supabaseClient.auth.updateUser({
+          data: {
+            full_name: fullName,
+            ...(authPhotoDataUrl ? { avatar_url: authPhotoDataUrl } : {})
+          }
+        });
+      }
     } else {
       result = await supabaseClient.auth.signInWithPassword({ email, password });
     }
@@ -2565,6 +2629,7 @@ async function handleAuth() {
       errorEl.textContent = msg;
       errorEl.style.display = 'block';
     } else {
+      authPhotoDataUrl = null;
       hideAuthModal();
       // onAuthStateChange will handle the rest
     }
@@ -2591,10 +2656,12 @@ function updateAuthUI() {
   const container = document.getElementById('authSection');
   if (!container) return;
   if (currentUser) {
-    const email = currentUser.email || 'Usuário';
-    const firstName = email.split('@')[0];
+    const name = currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'Usuário';
+    const avatar = currentUser.user_metadata?.avatar_url || '';
+    const firstName = name.split(' ')[0];
     container.innerHTML = `
-      <span class="profile-name" title="${email}">${firstName}</span>
+      ${avatar ? `<img src="${avatar}" alt="Perfil" class="profile-pic" title="${name}">` : ''}
+      <span class="profile-name" title="${currentUser.email}">${firstName}</span>
       <button class="logout-btn" onclick="logoutUser()" title="Sair">Sair</button>
     `;
     const syncBadge = document.getElementById('syncBadge');
