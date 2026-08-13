@@ -2411,7 +2411,21 @@ let currentUser = null;
 let isOnlineMode = false;
 
 function initSupabase() {
-  if (typeof window.supabase === 'undefined') return;
+  if (typeof window.supabase === 'undefined') {
+    console.error('[AUTH] Supabase library NOT loaded!');
+    return;
+  }
+
+  // Debug: log everything about the URL
+  console.log('[AUTH] === PAGE LOAD ===');
+  console.log('[AUTH] Full URL:', window.location.href);
+  console.log('[AUTH] Hash:', window.location.hash || '(empty)');
+  console.log('[AUTH] Search:', window.location.search || '(empty)');
+
+  // Check localStorage for Supabase auth data (PKCE verifier, tokens, etc)
+  const sbKeys = Object.keys(localStorage).filter(k => k.includes('supabase') || k.includes('sb-'));
+  console.log('[AUTH] localStorage keys:', sbKeys.length ? sbKeys : '(none)');
+
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: true,
@@ -2420,52 +2434,79 @@ function initSupabase() {
     }
   });
 
-  let authInitialized = false;
-
-  // Listen for auth changes — handles OAuth redirect callback and session restore
+  // Listen for auth changes
   supabaseClient.auth.onAuthStateChange((event, session) => {
-    console.log('[AUTH]', event, session ? 'has session' : 'no session');
+    console.log('[AUTH] Event:', event, '| Session:', session ? 'YES (' + (session.user?.email || 'unknown') + ')' : 'NO');
 
     if (session && session.user) {
-      // User is logged in (either from OAuth callback or restored session)
       currentUser = session.user;
       isOnlineMode = true;
       updateAuthUI();
       cleanAuthUrl();
       loadDataFromSupabase();
     } else if (event === 'SIGNED_OUT') {
-      // User explicitly signed out
       currentUser = null;
       isOnlineMode = false;
       updateAuthUI();
       loadDB();
       renderAll();
     } else if (event === 'INITIAL_SESSION' && !session) {
-      // Initial check with no session — just show login button, don't reset data
-      // (hash detection might still be processing if returning from OAuth)
       currentUser = null;
       isOnlineMode = false;
       updateAuthUI();
     }
   });
 
-  // Fallback: check session after a short delay (handles race condition with hash detection)
-  setTimeout(async () => {
-    if (!currentUser) {
-      const { data: { session } } = await supabaseClient.auth.getSession();
-      if (session && session.user) {
-        console.log('[AUTH] Fallback: session found');
-        currentUser = session.user;
-        isOnlineMode = true;
-        updateAuthUI();
-        cleanAuthUrl();
-        loadDataFromSupabase();
-      } else {
-        console.log('[AUTH] Fallback: no session');
-        updateAuthUI();
+  // Check if URL has auth params (from OAuth redirect)
+  const hasHashToken = window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token'));
+  const hasCodeParam = window.location.search && window.location.search.includes('code=');
+  const hasAuthInUrl = hasHashToken || hasCodeParam;
+
+  console.log('[AUTH] Has hash token:', hasHashToken, '| Has code param:', hasCodeParam);
+
+  if (hasAuthInUrl) {
+    console.log('[AUTH] Auth params found in URL! Waiting for Supabase to process...');
+    // Multiple retry attempts with increasing delay
+    [500, 1000, 2000, 4000].forEach(delay => {
+      setTimeout(async () => {
+        if (currentUser) return; // Already logged in
+        console.log(`[AUTH] Retry at ${delay}ms...`);
+        try {
+          const { data: { session }, error } = await supabaseClient.auth.getSession();
+          if (error) console.log(`[AUTH] ${delay}ms error:`, error.message || error);
+          if (session && session.user) {
+            console.log(`[AUTH] ✅ Session found at ${delay}ms!`);
+            currentUser = session.user;
+            isOnlineMode = true;
+            updateAuthUI();
+            cleanAuthUrl();
+            loadDataFromSupabase();
+          } else {
+            console.log(`[AUTH] ${delay}ms: still no session`);
+          }
+        } catch (e) {
+          console.log(`[AUTH] ${delay}ms exception:`, e.message);
+        }
+      }, delay);
+    });
+  } else {
+    console.log('[AUTH] No auth params in URL. Normal page load.');
+    // Check for stored session (returning user)
+    setTimeout(async () => {
+      if (!currentUser) {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session && session.user) {
+          console.log('[AUTH] Stored session found');
+          currentUser = session.user;
+          isOnlineMode = true;
+          updateAuthUI();
+          loadDataFromSupabase();
+        } else {
+          updateAuthUI();
+        }
       }
-    }
-  }, 1500);
+    }, 500);
+  }
 }
 
 async function loginWithGoogle() {
