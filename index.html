@@ -2822,11 +2822,13 @@ function setupPWA() {
   }
   themeMeta.content = '#6366f1';
 
-  // Register service worker
-  const SW_URL = 'https://base44.app/api/apps/6a6d32b3110ba1d4f59855ab/files/mp/public/6a6d32b3110ba1d4f59855ab/a9c4e0daf_sw.js';
+  // Register service worker (inline, same-origin to avoid cross-origin errors)
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register(SW_URL).then(() => {
-      console.log('✅ Service Worker registrado');
+    const swCode = 'const CACHE=\'controle-fin-v1\';self.addEventListener(\'install\',e=>{self.skipWaiting()}),self.addEventListener(\'activate\',e=>{e.waitUntil(self.clients.claim())}),self.addEventListener(\'fetch\',e=>{e.request.method!==\'GET\'||e.request.url.includes(\'supabase\')||(e.respondWith(caches.open(CACHE).then(c=>c.match(e.request).then(r=>r||fetch(e.request).then(resp=>{c.put(e.request,resp.clone());return resp}).catch(()=>c.match(\'/\'))))))})';
+    const swBlob = new Blob([swCode], { type: 'application/javascript' });
+    const swURL = URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swURL).then(() => {
+      console.log('SW registrado');
     }).catch(err => {
       console.warn('SW registration failed:', err);
     });
