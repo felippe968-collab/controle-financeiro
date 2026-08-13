@@ -2422,6 +2422,24 @@ function initSupabase() {
   console.log('[AUTH] Hash:', window.location.hash || '(empty)');
   console.log('[AUTH] Search:', window.location.search || '(empty)');
 
+  // Detect OAuth error in URL and show friendly message
+  const urlParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
+  const errorMsg = urlParams.get('error_description') || hashParams.get('error_description');
+  const errorCode = urlParams.get('error_code') || hashParams.get('error_code');
+  if (errorMsg || errorCode) {
+    console.error('[AUTH] OAuth error:', errorCode, errorMsg);
+    let userMessage = 'Erro ao entrar com Google. ';
+    if (errorCode === 'unexpected_failure' || (errorMsg && errorMsg.includes('exchange'))) {
+      userMessage += 'A configuração do Google no Supabase pode estar incorreta. Verifique:\n\n1. No Google Cloud Console → Credenciais → URIs de redirecionamento autorizados:\n   https://dahqnvjyufwcqkuiubjs.supabase.co/auth/v1/callback\n\n2. No Supabase Dashboard → Authentication → Providers → Google:\n   Confirme se Client ID e Client Secret estão corretos.';
+    } else {
+      userMessage += errorMsg || errorCode;
+    }
+    setTimeout(() => alert(userMessage), 500);
+    // Clean the error from URL
+    history.replaceState(null, '', window.location.pathname);
+  }
+
   // Check localStorage for Supabase auth data (PKCE verifier, tokens, etc)
   const sbKeys = Object.keys(localStorage).filter(k => k.includes('supabase') || k.includes('sb-'));
   console.log('[AUTH] localStorage keys:', sbKeys.length ? sbKeys : '(none)');
