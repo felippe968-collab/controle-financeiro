@@ -958,14 +958,14 @@ td .badge {
 
 <!-- ===== TABS ===== -->
 <div class="tabs">
-  <button class="tab active" onclick="switchTab('bills', event)">📋 Contas Mensais</button>
+  <button class="tab active" onclick="switchTab('income', event)">💵 Ganhos</button>
+  <button class="tab" onclick="switchTab('bills', event)">📋 Contas Mensais</button>
   <button class="tab" onclick="switchTab('credit', event)">💳 Cartão de Crédito</button>
-  <button class="tab" onclick="switchTab('income', event)">💵 Ganhos</button>
   <button class="tab" onclick="switchTab('dashboard', event)">📊 Dashboard</button>
 </div>
 
 <!-- ===== TAB: BILLS ===== -->
-<div class="tab-content active" id="tab-bills">
+<div class="tab-content" id="tab-bills">
   <div class="section">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Contas Fixas e Parceladas</div>
@@ -1032,7 +1032,7 @@ td .badge {
 </div>
 
 <!-- ===== TAB: INCOME ===== -->
-<div class="tab-content" id="tab-income">
+<div class="tab-content active" id="tab-income">
   <div class="section">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Ganhos e Receitas do Mês</div>
@@ -1162,6 +1162,29 @@ td .badge {
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('billModal')">Cancelar</button>
       <button class="btn btn-success" onclick="saveBill()">Salvar Conta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: MONTH OVERRIDE ===== -->
+<div class="modal-overlay" id="monthOverrideModal">
+  <div class="modal">
+    <h2>🗓️ Editar só deste mês</h2>
+    <p style="color:var(--text-muted);font-size:.88rem;margin-bottom:16px">
+      Altere o valor e/ou descrição apenas para <strong id="overrideMonthLabel" style="color:var(--text)"></strong>.
+      Os outros meses continuam com o valor original.
+    </p>
+    <div class="form-group">
+      <label>Descrição (opcional — deixe vazio para manter a original)</label>
+      <input type="text" id="overrideDesc" placeholder="Ex: Condomínio (taxa extra)">
+    </div>
+    <div class="form-group">
+      <label>Valor para este mês (R$)</label>
+      <input type="number" id="overrideValue" placeholder="0,00" step="0.01" min="0">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('monthOverrideModal')">Cancelar</button>
+      <button class="btn btn-success" onclick="saveMonthOverride()">Salvar deste mês</button>
     </div>
   </div>
 </div>
@@ -1323,6 +1346,29 @@ td .badge {
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('billModal')">Cancelar</button>
       <button class="btn btn-success" onclick="saveBill()">Salvar Conta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: MONTH OVERRIDE ===== -->
+<div class="modal-overlay" id="monthOverrideModal">
+  <div class="modal">
+    <h2>🗓️ Editar só deste mês</h2>
+    <p style="color:var(--text-muted);font-size:.88rem;margin-bottom:16px">
+      Altere o valor e/ou descrição apenas para <strong id="overrideMonthLabel" style="color:var(--text)"></strong>.
+      Os outros meses continuam com o valor original.
+    </p>
+    <div class="form-group">
+      <label>Descrição (opcional — deixe vazio para manter a original)</label>
+      <input type="text" id="overrideDesc" placeholder="Ex: Condomínio (taxa extra)">
+    </div>
+    <div class="form-group">
+      <label>Valor para este mês (R$)</label>
+      <input type="number" id="overrideValue" placeholder="0,00" step="0.01" min="0">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('monthOverrideModal')">Cancelar</button>
+      <button class="btn btn-success" onclick="saveMonthOverride()">Salvar deste mês</button>
     </div>
   </div>
 </div>
@@ -1700,6 +1746,7 @@ function saveBill() {
 
   const category = document.getElementById('billCategory').value;
   const dueDay = parseInt(document.getElementById('billDueDay').value) || 10;
+  let savedBill = null;
 
   if (editingBillId) {
     const bill = db.bills.find(b => b.id === editingBillId);
@@ -1713,9 +1760,10 @@ function saveBill() {
         bill.startMonth = parseInt(document.getElementById('billStartMonth').value);
         bill.startYear = parseInt(document.getElementById('billStartYear').value);
       }
+      savedBill = bill;
     }
   } else {
-    const newBill = {
+    savedBill = {
       id: genId(),
       desc,
       category,
@@ -1723,23 +1771,19 @@ function saveBill() {
       dueDay,
       type: billType,
       paid: {},
+      monthOverrides: {},
       createdAt: Date.now()
     };
     if (billType === 'installment') {
-      newBill.installments = parseInt(document.getElementById('billInstallments').value) || 1;
-      newBill.startMonth = parseInt(document.getElementById('billStartMonth').value);
-      newBill.startYear = parseInt(document.getElementById('billStartYear').value) || currentYear;
+      savedBill.installments = parseInt(document.getElementById('billInstallments').value) || 1;
+      savedBill.startMonth = parseInt(document.getElementById('billStartMonth').value);
+      savedBill.startYear = parseInt(document.getElementById('billStartYear').value) || currentYear;
     }
-    db.bills.push(newBill);
+    db.bills.push(savedBill);
   }
 
   saveDB();
-  if (editingBillId) {
-    const bill = db.bills.find(b => b.id === editingBillId);
-    if (bill) syncBillToSupabase(bill);
-  } else {
-    syncBillToSupabase(newBill);
-  }
+  syncBillToSupabase(savedBill);
   closeModal('billModal');
   renderAll();
 }
@@ -1780,8 +1824,56 @@ function getBillsForMonth(month, year) {
       parcelLabel = `${currentParcel}/${bill.installments}`;
     }
     const isPaid = bill.paid[key] || false;
-    return { ...bill, parcelLabel, isPaid, monthlyValue: bill.value };
+    // Check for month-specific override
+    const overrides = bill.monthOverrides || {};
+    const override = overrides[key];
+    const monthlyValue = override ? override.value : bill.value;
+    const displayDesc = override && override.desc ? override.desc : bill.desc;
+    const hasOverride = !!override;
+    return { ...bill, parcelLabel, isPaid, monthlyValue, displayDesc, hasOverride };
   });
+}
+
+let overrideBillId = null;
+
+function openMonthOverrideModal(billId) {
+  overrideBillId = billId;
+  const bill = db.bills.find(b => b.id === billId);
+  if (!bill) return;
+  const key = monthKey(currentMonth, currentYear);
+  const existing = bill.monthOverrides && bill.monthOverrides[key];
+  document.getElementById('overrideMonthLabel').textContent =
+    MONTHS[currentMonth] + ' de ' + currentYear;
+  document.getElementById('overrideDesc').value = existing && existing.desc ? existing.desc : '';
+  document.getElementById('overrideValue').value = existing && existing.value ? existing.value : bill.value;
+  openModal('monthOverrideModal');
+}
+
+function saveMonthOverride() {
+  const bill = db.bills.find(b => b.id === overrideBillId);
+  if (!bill) return;
+  const value = parseFloat(document.getElementById('overrideValue').value) || 0;
+  if (value <= 0) { alert('Informe um valor válido!'); return; }
+  const desc = document.getElementById('overrideDesc').value.trim();
+  const key = monthKey(currentMonth, currentYear);
+  if (!bill.monthOverrides) bill.monthOverrides = {};
+  bill.monthOverrides[key] = { value, desc: desc || null };
+  saveDB();
+  syncBillToSupabase(bill);
+  closeModal('monthOverrideModal');
+  renderAll();
+}
+
+function removeMonthOverride(billId) {
+  const bill = db.bills.find(b => b.id === billId);
+  if (!bill) return;
+  const key = monthKey(currentMonth, currentYear);
+  if (bill.monthOverrides && bill.monthOverrides[key]) {
+    delete bill.monthOverrides[key];
+    saveDB();
+    syncBillToSupabase(bill);
+    renderAll();
+  }
 }
 
 function renderBills() {
@@ -1796,9 +1888,11 @@ function renderBills() {
   }
   empty.style.display = 'none';
 
-  tbody.innerHTML = bills.map(bill => `
+  tbody.innerHTML = bills.map(bill => {
+    const overrideBadge = bill.hasOverride ? '<span class="badge-parcel" style="margin-left:6px;background:var(--warning-light);color:var(--warning)">⚠ Editado este mês</span>' : '';
+    return `
     <tr>
-      <td data-label="Descrição" style="font-weight:600;font-size:.95rem;padding-bottom:2px">${bill.desc}</td>
+      <td data-label="Descrição" style="font-weight:600;font-size:.95rem;padding-bottom:2px">${bill.displayDesc}${overrideBadge}</td>
       <td data-label="Valor" style="font-weight:700;color:var(--primary-hover);font-size:1.05rem">${fmtMoney(bill.monthlyValue)}</td>
       <td data-label="Categoria"><span style="color:var(--text-muted);font-size:.82rem">${bill.category}</span></td>
       <td data-label="Parcela"><span class="badge-parcel">${bill.parcelLabel}</span></td>
@@ -1810,11 +1904,13 @@ function renderBills() {
         </label>
       </td>
       <td data-label="Ações" style="padding-top:8px;border-top:1px solid var(--border)">
-        <button class="icon-btn" onclick="openBillModal(db.bills.find(b=>b.id==='${bill.id}'))" title="Editar">✏️</button>
+        <button class="icon-btn" onclick="openBillModal(db.bills.find(b=>b.id==='${bill.id}'))" title="Editar (todos os meses)">✏️</button>
+        <button class="icon-btn" onclick="openMonthOverrideModal('${bill.id}')" title="Editar só deste mês">🗓️</button>
+        ${bill.hasOverride ? `<button class="icon-btn" onclick="removeMonthOverride('${bill.id}')" title="Remover edição do mês">↩️</button>` : ''}
         <button class="icon-btn danger" onclick="deleteBill('${bill.id}')" title="Excluir">🗑️</button>
       </td>
     </tr>
-  `).join('');
+  `;}).join('');
 }
 
 // ===== CREDIT CARD =====
