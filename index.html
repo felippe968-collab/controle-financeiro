@@ -1221,20 +1221,20 @@ td .badge {
         <input type="number" id="billDueDay" placeholder="Ex: 10" min="1" max="31" value="10">
       </div>
     </div>
-    <div id="installmentFields" style="display:none">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Quantidade de Parcelas</label>
-          <input type="number" id="billInstallments" placeholder="Ex: 24" min="1" value="1">
-        </div>
-        <div class="form-group">
-          <label>Mês de Início</label>
-          <select id="billStartMonth"></select>
-        </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Início: Mês</label>
+        <select id="billStartMonth"></select>
       </div>
       <div class="form-group">
-        <label>Ano de Início</label>
+        <label>Início: Ano</label>
         <input type="number" id="billStartYear" placeholder="Ex: 2026" min="2020" max="2099">
+      </div>
+    </div>
+    <div id="installmentFields" style="display:none">
+      <div class="form-group">
+        <label>Quantidade de Parcelas</label>
+        <input type="number" id="billInstallments" placeholder="Ex: 24" min="1" value="1">
       </div>
     </div>
     <div class="modal-actions">
@@ -1405,20 +1405,20 @@ td .badge {
         <input type="number" id="billDueDay" placeholder="Ex: 10" min="1" max="31" value="10">
       </div>
     </div>
-    <div id="installmentFields" style="display:none">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Quantidade de Parcelas</label>
-          <input type="number" id="billInstallments" placeholder="Ex: 24" min="1" value="1">
-        </div>
-        <div class="form-group">
-          <label>Mês de Início</label>
-          <select id="billStartMonth"></select>
-        </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Início: Mês</label>
+        <select id="billStartMonth"></select>
       </div>
       <div class="form-group">
-        <label>Ano de Início</label>
+        <label>Início: Ano</label>
         <input type="number" id="billStartYear" placeholder="Ex: 2026" min="2020" max="2099">
+      </div>
+    </div>
+    <div id="installmentFields" style="display:none">
+      <div class="form-group">
+        <label>Quantidade de Parcelas</label>
+        <input type="number" id="billInstallments" placeholder="Ex: 24" min="1" value="1">
       </div>
     </div>
     <div class="modal-actions">
@@ -1816,16 +1816,20 @@ function openBillModal(bill = null) {
     document.getElementById('billCategory').value = bill.category;
     document.getElementById('billValue').value = bill.value;
     document.getElementById('billDueDay').value = bill.dueDay;
+    // Set start month/year for both fixed and installment bills
+    document.getElementById('billStartMonth').value = bill.startMonth !== undefined ? bill.startMonth : currentMonth;
+    document.getElementById('billStartYear').value = bill.startYear || currentYear;
     if (bill.type === 'installment') {
-      document.getElementById('billInstallments').value = bill.installments;
-      document.getElementById('billStartMonth').value = bill.startMonth;
-      document.getElementById('billStartYear').value = bill.startYear;
+      document.getElementById('billInstallments').value = bill.installments || 1;
     }
   } else {
     document.getElementById('billDesc').value = '';
     document.getElementById('billValue').value = '';
     document.getElementById('billDueDay').value = '10';
     document.getElementById('billInstallments').value = '1';
+    // Default start = current month being viewed
+    document.getElementById('billStartMonth').value = currentMonth;
+    document.getElementById('billStartYear').value = currentYear;
     setBillType('fixed');
   }
   openModal('billModal');
@@ -1859,10 +1863,18 @@ function saveBill() {
       bill.category = category;
       bill.value = value;
       bill.dueDay = dueDay;
-      if (bill.type === 'installment') {
+      // FIX: Always update the type (allows changing fixed -> installment and vice-versa)
+      bill.type = billType;
+      if (billType === 'installment') {
         bill.installments = parseInt(document.getElementById('billInstallments').value) || 1;
         bill.startMonth = parseInt(document.getElementById('billStartMonth').value);
-        bill.startYear = parseInt(document.getElementById('billStartYear').value);
+        bill.startYear = parseInt(document.getElementById('billStartYear').value) || currentYear;
+      } else {
+        // For fixed bills, save the start month/year (when the bill began)
+        bill.startMonth = parseInt(document.getElementById('billStartMonth').value);
+        bill.startYear = parseInt(document.getElementById('billStartYear').value) || currentYear;
+        // Clean up installment-specific fields if transitioning from installment to fixed
+        delete bill.installments;
       }
       savedBill = bill;
     }
@@ -1876,12 +1888,12 @@ function saveBill() {
       type: billType,
       paid: {},
       monthOverrides: {},
+      startMonth: parseInt(document.getElementById('billStartMonth').value),
+      startYear: parseInt(document.getElementById('billStartYear').value) || currentYear,
       createdAt: Date.now()
     };
     if (billType === 'installment') {
       savedBill.installments = parseInt(document.getElementById('billInstallments').value) || 1;
-      savedBill.startMonth = parseInt(document.getElementById('billStartMonth').value);
-      savedBill.startYear = parseInt(document.getElementById('billStartYear').value) || currentYear;
     }
     db.bills.push(savedBill);
   }
@@ -1914,10 +1926,13 @@ function toggleBillPaid(id) {
 function getBillsForMonth(month, year) {
   const key = monthKey(month, year);
   return db.bills.filter(bill => {
-    if (bill.type === 'fixed') return true;
-    const startIdx = bill.startYear * 12 + bill.startMonth;
+    const startIdx = (bill.startYear || 2024) * 12 + (bill.startMonth !== undefined ? bill.startMonth : 0);
     const currentIdx = year * 12 + month;
-    const endIdx = startIdx + bill.installments - 1;
+    if (bill.type === 'fixed') {
+      // Fixed bills: show from start date onwards (no end)
+      return currentIdx >= startIdx;
+    }
+    const endIdx = startIdx + (bill.installments || 1) - 1;
     return currentIdx >= startIdx && currentIdx <= endIdx;
   }).map(bill => {
     let parcelLabel = 'Fixa';
