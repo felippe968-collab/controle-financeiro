@@ -3125,11 +3125,31 @@ function importLocalJSON(event) {
   reader.readAsText(file);
 }
 
-function clearAllData() {
+async function clearAllData() {
   if (!confirm('⚠️ APAGAR TODOS os dados? Esta ação não pode ser desfeita!')) return;
   if (!confirm('Tem certeza absoluta? Todos os gastos, contas, cartão e ganhos serão perdidos!')) return;
+
+  // 1. Clear local storage
   db = { bills: [], credits: [], incomes: [], people: ['Titular'] };
-  saveDB();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+
+  // 2. Delete everything from Supabase (bills, credits, incomes)
+  if (isOnlineMode && supabaseClient && currentUser) {
+    try {
+      await Promise.all([
+        supabaseClient.from('bills').delete().eq('user_id', currentUser.id),
+        supabaseClient.from('credits').delete().eq('user_id', currentUser.id),
+        supabaseClient.from('incomes').delete().eq('user_id', currentUser.id)
+      ]);
+      // Reset people in user_metadata to just ['Titular']
+      await supabaseClient.auth.updateUser({ data: { people: ['Titular'] } });
+      console.log('[CLEAR] Supabase data deleted');
+    } catch(e) {
+      console.error('[CLEAR] Error deleting from Supabase:', e);
+      alert('⚠️ Erro ao apagar dados da nuvem: ' + e.message + '\nOs dados locais foram limpos.');
+    }
+  }
+
   renderAll();
   renderPeopleManager();
   alert('✅ Todos os dados foram apagados.');
