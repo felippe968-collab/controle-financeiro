@@ -1557,7 +1557,7 @@ td .badge {
 <script>
 // ===== GLOBAL STATE =====
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-function getTitular() { return db.people[0] || 'Pessoa 1'; }
+function getTitular() { return db.people[0] || 'Titular'; }
 const STORAGE_KEY = 'finance_control_data_v2';
 
 let _now = new Date();
@@ -1572,7 +1572,7 @@ let db = {
   bills: [],
   credits: [],
   incomes: [],
-  people: ['Pessoa 1', 'Pessoa 2', 'Pessoa 3', 'Pessoa 4', 'Pessoa 5']
+  people: ['Titular']
 };
 
 // ===== STORAGE =====
@@ -1583,7 +1583,7 @@ function loadDB() {
       const parsed = JSON.parse(raw);
       db = { ...db, ...parsed };
       // Ensure people array exists and titular is always present
-      if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Pessoa 1', 'Pessoa 2', 'Pessoa 3', 'Pessoa 4', 'Pessoa 5'];
+      if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Titular'];
       
     }
   } catch(e) { console.warn('Erro ao carregar dados', e); }
@@ -1591,6 +1591,23 @@ function loadDB() {
 
 function saveDB() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  syncPeopleToSupabase();
+}
+
+let _peopleSyncTimer = null;
+function syncPeopleToSupabase() {
+  if (!isOnlineMode || !supabaseClient || !currentUser) return;
+  // Debounce to avoid too many API calls
+  if (_peopleSyncTimer) clearTimeout(_peopleSyncTimer);
+  _peopleSyncTimer = setTimeout(async () => {
+    try {
+      const { error } = await supabaseClient.auth.updateUser({
+        data: { people: db.people }
+      });
+      if (error) console.error('Sync people error:', error);
+      else console.log('[SYNC] People synced:', db.people);
+    } catch(e) { console.error('Sync people error:', e); }
+  }, 500);
 }
 
 function genId() {
@@ -1615,7 +1632,19 @@ function fmtDate(d) {
 // ===== PEOPLE MANAGEMENT =====
 function renderPeopleManager() {
   const container = document.getElementById('peopleManager');
-  let html = db.people.map((person, idx) => `
+  let html = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">';
+  html += '<span style="font-size:0.85rem;font-weight:600">Pessoas</span>';
+  html += '<button class="people-help-btn" onclick="togglePeopleHelp()" title="Como funciona?" style="width:20px;height:20px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--text-muted);cursor:pointer;font-size:0.7rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">?</button>';
+  html += '</div>';
+  html += '<div id="peopleHelpText" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:0.8rem;color:var(--text-muted);line-height:1.4">';
+  html += '<b>Como funciona:</b><br>';
+  html += '• A primeira pessoa \u2605 \u00e9 o <b>titular</b>.<br>';
+  html += '\u2022 Digite o nome e clique <b>+</b> para adicionar.<br>';
+  html += '\u2022 Clique \u270f\ufe0f para editar o nome.<br>';
+  html += '\u2022 Clique \u00d7 para remover.<br>';
+  html += '\u2022 Use para separar gastos no cart\u00e3o de cr\u00e9dito.';
+  html += '</div>';
+  html += db.people.map((person, idx) => `
     <span class="person-tag ${idx === 0 ? 'titular' : ''}">
       <span class="person-name-text">${person}${idx === 0 ? ' \u2605' : ''}</span>
       <button class="edit-person" onclick="editPerson(${idx})" title="Editar nome">\u270f\ufe0f</button>
@@ -1629,6 +1658,11 @@ function renderPeopleManager() {
     </div>
   `;
   container.innerHTML = html;
+}
+
+function togglePeopleHelp() {
+  const el = document.getElementById('peopleHelpText');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function addPerson() {
@@ -2810,6 +2844,12 @@ async function loadDataFromSupabase() {
     db.bills = (billsRes.data || []).map(r => r.data);
     db.credits = (creditsRes.data || []).map(r => r.data);
     db.incomes = (incomesRes.data || []).map(r => r.data);
+    // Restore people list from user_metadata (synced across devices)
+    if (currentUser && currentUser.user_metadata && currentUser.user_metadata.people) {
+      db.people = currentUser.user_metadata.people;
+      renderPeopleManager();
+      updateCreditPersonDropdown();
+    }
 
     // Check if local data exists and should be migrated
     const localRaw = localStorage.getItem(STORAGE_KEY);
@@ -3073,7 +3113,7 @@ function importLocalJSON(event) {
       const data = JSON.parse(e.target.result);
       if (confirm('Importar dados? Isso vai SUBSTITUIR os dados atuais.')) {
         db = { ...db, ...data };
-        if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Pessoa 1', 'Pessoa 2', 'Pessoa 3', 'Pessoa 4', 'Pessoa 5'];
+        if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Titular'];
         
         saveDB();
         renderAll();
@@ -3088,7 +3128,7 @@ function importLocalJSON(event) {
 function clearAllData() {
   if (!confirm('⚠️ APAGAR TODOS os dados? Esta ação não pode ser desfeita!')) return;
   if (!confirm('Tem certeza absoluta? Todos os gastos, contas, cartão e ganhos serão perdidos!')) return;
-  db = { bills: [], credits: [], incomes: [], people: ['Pessoa 1', 'Pessoa 2', 'Pessoa 3', 'Pessoa 4', 'Pessoa 5'] };
+  db = { bills: [], credits: [], incomes: [], people: ['Titular'] };
   saveDB();
   renderAll();
   renderPeopleManager();
