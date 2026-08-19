@@ -1270,7 +1270,7 @@ td .badge {
 <!-- ===== MODAL: CREDIT ===== -->
 <div class="modal-overlay" id="creditModal">
   <div class="modal">
-    <h2>Nova Compra do Cartão</h2>
+    <h2 id="creditModalTitle">Nova Compra do Cartão</h2>
     <div class="form-group">
       <label>Compra</label>
       <input type="text" id="creditDesc" placeholder="Ex: Tênis, Mercado, Eletrônico..." oninput="autoFillDate()">
@@ -1454,7 +1454,7 @@ td .badge {
 <!-- ===== MODAL: CREDIT ===== -->
 <div class="modal-overlay" id="creditModal">
   <div class="modal">
-    <h2>Nova Compra do Cartão</h2>
+    <h2 id="creditModalTitle">Nova Compra do Cartão</h2>
     <div class="form-group">
       <label>Compra</label>
       <input type="text" id="creditDesc" placeholder="Ex: Tênis, Mercado, Eletrônico..." oninput="autoFillDate()">
@@ -2067,13 +2067,26 @@ function renderBills() {
 }
 
 // ===== CREDIT CARD =====
-function openCreditModal() {
-  document.getElementById('creditDesc').value = '';
-  document.getElementById('creditValue').value = '';
-  document.getElementById('creditInstallments').value = '1';
-  document.getElementById('creditDate').value = new Date().toISOString().split('T')[0];
-  updateCreditPersonDropdown();
-  document.getElementById('creditPerson').value = getTitular();
+let editingCreditId = null;
+
+function openCreditModal(credit = null) {
+  editingCreditId = credit ? credit.id : null;
+  document.getElementById('creditModalTitle').textContent = credit ? 'Editar Compra do Cartão' : 'Nova Compra do Cartão';
+  if (credit) {
+    document.getElementById('creditDesc').value = credit.desc || '';
+    document.getElementById('creditValue').value = credit.value || '';
+    document.getElementById('creditInstallments').value = credit.installments || 1;
+    document.getElementById('creditDate').value = credit.date || new Date().toISOString().split('T')[0];
+    updateCreditPersonDropdown();
+    document.getElementById('creditPerson').value = credit.person || getTitular();
+  } else {
+    document.getElementById('creditDesc').value = '';
+    document.getElementById('creditValue').value = '';
+    document.getElementById('creditInstallments').value = '1';
+    document.getElementById('creditDate').value = new Date().toISOString().split('T')[0];
+    updateCreditPersonDropdown();
+    document.getElementById('creditPerson').value = getTitular();
+  }
   openModal('creditModal');
   document.getElementById('creditDesc').focus();
 }
@@ -2099,21 +2112,38 @@ function saveCredit() {
   const purchaseMonth = d.getMonth();
   const purchaseYear = d.getFullYear();
 
-  const newCredit = {
-    id: genId(),
-    desc,
-    value,
-    person,
-    installments,
-    date,
-    purchaseMonth,
-    purchaseYear,
-    createdAt: Date.now()
-  };
+  if (editingCreditId) {
+    // Edit existing credit
+    const credit = db.credits.find(c => c.id === editingCreditId);
+    if (credit) {
+      credit.desc = desc;
+      credit.value = value;
+      credit.person = person;
+      credit.installments = installments;
+      credit.date = date;
+      credit.purchaseMonth = purchaseMonth;
+      credit.purchaseYear = purchaseYear;
+      saveDB();
+      syncCreditToSupabase(credit);
+    }
+  } else {
+    // Create new credit
+    const newCredit = {
+      id: genId(),
+      desc,
+      value,
+      person,
+      installments,
+      date,
+      purchaseMonth,
+      purchaseYear,
+      createdAt: Date.now()
+    };
+    db.credits.push(newCredit);
+    saveDB();
+    syncCreditToSupabase(newCredit);
+  }
 
-  db.credits.push(newCredit);
-  saveDB();
-  syncCreditToSupabase(newCredit);
   closeModal('creditModal');
   renderAll();
 }
@@ -2166,6 +2196,7 @@ function renderCredits() {
       <td data-label="Parcela"><span class="badge-parcel">${c.installments > 1 ? c.currentParcel + '/' + c.installments : 'À vista'}</span></td>
       <td data-label="Data" style="color:var(--text-muted)">${fmtDate(c.date)}</td>
       <td data-label="Ações" style="padding-top:8px;border-top:1px solid var(--border)">
+        <button class="icon-btn" onclick="openCreditModal(db.credits.find(c=>c.id==='${c.id}'))" title="Editar">✏️</button>
         <button class="icon-btn danger" onclick="deleteCredit('${c.id}')" title="Excluir">🗑️</button>
       </td>
     </tr>
