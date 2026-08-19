@@ -51,6 +51,23 @@ body {
 .header h1 {
   font-size: 1.6rem;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header h1 .header-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.header h1 .header-icon svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.header h1 .header-title {
   background: linear-gradient(135deg, var(--primary), var(--primary-hover));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -614,7 +631,7 @@ td .badge {
 @media (max-width: 640px) {
   body { padding: 8px; padding-bottom: 24px; }
   .header { flex-direction: column; align-items: stretch; gap: 8px; }
-  .header h1 { text-align: center; font-size: 1.35rem; }
+  .header h1 { justify-content: center; font-size: 1.35rem; }
   .nav-bar { justify-content: center; flex-wrap: wrap; gap: 6px; }
   .nav-btn { padding: 7px 10px; font-size: 0.8rem; }
   .period-selector { justify-content: center; }
@@ -1005,7 +1022,16 @@ td .badge {
 
 <!-- ===== HEADER ===== -->
 <div class="header">
-  <h1>💰 Controle Financeiro</h1>
+  <h1>
+    <span class="header-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/>
+        <path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/>
+        <path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>
+      </svg>
+    </span>
+    <span class="header-title">Controle Financeiro</span>
+  </h1>
   <div class="nav-bar">
     <button class="nav-btn" onclick="changeMonth(-1)" title="Mês anterior">◀ Voltar</button>
     <div class="period-selector">
