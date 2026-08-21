@@ -1364,26 +1364,6 @@ td .badge {
 </div>
 
 <!-- MODAL: Income Month Override -->
-<div class="modal-overlay" id="incomeOverrideModal">
-  <div class="modal">
-    <h2>Editar Ganho — Só deste mês</h2>
-    <p style="font-size:.88rem;color:var(--text-muted);margin-bottom:16px">
-      Altere o valor e/ou descrição apenas para <strong id="incomeOverrideMonthLabel" style="color:var(--text)"></strong>.
-    </p>
-    <div class="form-group">
-      <label>Descrição (opcional — deixe vazio para manter a original)</label>
-      <input type="text" id="incomeOverrideDesc" placeholder="Ex: Bônus, hora extra...">
-    </div>
-    <div class="form-group">
-      <label>Valor (R$)</label>
-      <input type="number" id="incomeOverrideValue" placeholder="0,00" step="0.01" min="0">
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('incomeOverrideModal')">Cancelar</button>
-      <button class="btn btn-success" onclick="saveIncomeOverride()">Salvar deste mês</button>
-    </div>
-  </div>
-</div>
 
 <!-- ===== MODAL: DATA MANAGEMENT ===== -->
 <div class="modal-overlay" id="dataModal">
@@ -2413,48 +2393,6 @@ function getIncomesForMonth(month, year) {
   });
 }
 
-let overrideIncomeId = null;
-
-function openIncomeOverrideModal(incomeId) {
-  overrideIncomeId = incomeId;
-  const income = db.incomes.find(i => i.id === incomeId);
-  if (!income) return;
-  const key = monthKey(currentMonth, currentYear);
-  const existing = income.monthOverrides && income.monthOverrides[key];
-  document.getElementById('incomeOverrideMonthLabel').textContent =
-    MONTHS[currentMonth] + ' de ' + currentYear;
-  document.getElementById('incomeOverrideDesc').value = existing && existing.desc ? existing.desc : '';
-  document.getElementById('incomeOverrideValue').value = existing && existing.value ? existing.value : income.value;
-  openModal('incomeOverrideModal');
-}
-
-function saveIncomeOverride() {
-  const income = db.incomes.find(i => i.id === overrideIncomeId);
-  if (!income) return;
-  const value = parseFloat(document.getElementById('incomeOverrideValue').value) || 0;
-  if (value <= 0) { alert('Informe um valor válido!'); return; }
-  const desc = document.getElementById('incomeOverrideDesc').value.trim();
-  const key = monthKey(currentMonth, currentYear);
-  if (!income.monthOverrides) income.monthOverrides = {};
-  income.monthOverrides[key] = { value, desc: desc || null };
-  saveDB();
-  syncIncomeToSupabase(income);
-  closeModal('incomeOverrideModal');
-  renderAll();
-}
-
-function removeIncomeOverride(incomeId) {
-  const income = db.incomes.find(i => i.id === incomeId);
-  if (!income) return;
-  const key = monthKey(currentMonth, currentYear);
-  if (income.monthOverrides && income.monthOverrides[key]) {
-    delete income.monthOverrides[key];
-    saveDB();
-    syncIncomeToSupabase(income);
-    renderAll();
-  }
-}
-
 function renderIncomes() {
   const tbody = document.getElementById('incomeBody');
   const empty = document.getElementById('incomeEmpty');
@@ -2468,16 +2406,13 @@ function renderIncomes() {
   empty.style.display = 'none';
 
   tbody.innerHTML = incomes.map(inc => {
-    const overrideBadge = inc.hasOverride ? '<span class="badge-parcel" style="margin-left:6px;background:var(--warning-light);color:var(--warning)">⚠ Editado este mês</span>' : '';
     return `
     <tr>
-      <td data-label="Descrição" style="font-weight:600;font-size:.95rem">${inc.displayDesc} ${inc.recurring ? '<span class="badge-parcel" style="margin-left:6px">Recorrente</span>' : ''}${overrideBadge}</td>
+      <td data-label="Descrição" style="font-weight:600;font-size:.95rem">${inc.displayDesc} ${inc.recurring ? '<span class="badge-parcel" style="margin-left:6px">Recorrente</span>' : ''}</td>
       <td data-label="Valor" style="font-weight:700;color:var(--success);font-size:1.05rem">${fmtMoney(inc.monthlyValue)}</td>
       <td data-label="Data" style="color:var(--text-muted)">${fmtDate(inc.date)}</td>
       <td data-label="Ações" style="padding-top:8px;border-top:1px solid var(--border)">
         <button class="icon-btn" onclick="openIncomeModal(db.incomes.find(i=>i.id==='${inc.id}'))" title="Editar (todos os meses)">✏️</button>
-        <button class="icon-btn" onclick="openIncomeOverrideModal('${inc.id}')" title="Editar só deste mês">🗓️</button>
-        ${inc.hasOverride ? `<button class="icon-btn" onclick="removeIncomeOverride('${inc.id}')" title="Remover edição do mês">↩️</button>` : ''}
         <button class="icon-btn danger" onclick="deleteIncome('${inc.id}')" title="Excluir">🗑️</button>
       </td>
     </tr>
