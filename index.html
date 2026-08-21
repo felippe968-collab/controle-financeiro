@@ -2490,7 +2490,7 @@ function renderSummary() {
   const bills = getBillsForMonth(currentMonth, currentYear);
   const credits = getCreditsForMonth(currentMonth, currentYear);
 
-  const totalIncome = incomes.reduce((s, i) => s + i.value, 0);
+  const totalIncome = incomes.reduce((s, i) => s + i.monthlyValue, 0);
   const totalBills = bills.reduce((s, b) => s + b.monthlyValue, 0);
   const titularCredit = credits
     .filter(c => c.person === getTitular())
@@ -2534,7 +2534,7 @@ function renderDashboard() {
   for (let m = 0; m < 12; m++) {
     // Income
     const incomes = getIncomesForMonth(m, year);
-    const incTotal = incomes.reduce((s, i) => s + i.value, 0);
+    const incTotal = incomes.reduce((s, i) => s + i.monthlyValue, 0);
     incomeData.push(incTotal);
 
     // Bills
