@@ -753,8 +753,8 @@ td .badge {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
 /* ===== DASHBOARD ===== */
 .dashboard-year-label {
@@ -2288,28 +2288,35 @@ function generateCreditPDF() {
   const dateTo = document.getElementById('pdfDateTo').value;
   const sortBy = document.getElementById('pdfSortBy').value;
 
-  // Gather ALL credit purchases (not just current month)
-  let purchases = db.credits.map(c => {
-    const d = new Date(c.date + 'T00:00:00');
+  // Deduplicate by ID (in case of sync issues)
+  const seenIds = new Set();
+  let purchases = db.credits.filter(c => {
+    if (seenIds.has(c.id)) return false;
+    seenIds.add(c.id);
+    return true;
+  }).map(c => {
     return {
-      ...c,
-      totalValue: c.value,
-      addedAtFmt: c.addedAt ? fmtDate(c.addedAt) : '—',
-      dateFmt: fmtDate(c.date)
+      id: c.id,
+      desc: c.desc || '—',
+      person: c.person || '—',
+      installments: c.installments || 1,
+      value: c.value || 0,
+      date: c.date || '',
+      addedAt: c.addedAt || ''
     };
   });
 
-  // Filter by person
+  // Filter by person (exact match)
   if (personFilter) {
     purchases = purchases.filter(c => c.person === personFilter);
   }
 
-  // Filter by date range (based on purchase date / vencimento)
+  // Filter by date range (vencimento)
   if (dateFrom) {
-    purchases = purchases.filter(c => c.date >= dateFrom);
+    purchases = purchases.filter(c => c.date && c.date >= dateFrom);
   }
   if (dateTo) {
-    purchases = purchases.filter(c => c.date <= dateTo);
+    purchases = purchases.filter(c => c.date && c.date <= dateTo);
   }
 
   if (purchases.length === 0) {
@@ -2319,70 +2326,90 @@ function generateCreditPDF() {
 
   // Sort
   purchases.sort((a, b) => {
-    if (sortBy === 'value') return b.totalValue - a.totalValue;
+    if (sortBy === 'value') return b.value - a.value;
     if (sortBy === 'person') return a.person.localeCompare(b.person);
     if (sortBy === 'desc') return a.desc.localeCompare(b.desc);
     if (sortBy === 'addedAt') return (a.addedAt || '').localeCompare(b.addedAt || '');
-    return a.date.localeCompare(b.date); // default: date
+    return (a.date || '').localeCompare(b.date || '');
   });
 
   // Generate PDF
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape' });
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
   // Title
-  doc.setFontSize(18);
-  doc.text('Compras do Cartão de Crédito', 14, 20);
+  doc.setFontSize(16);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Compras do Cartão de Crédito', 14, 18);
 
   // Filters summary
-  doc.setFontSize(10);
-  doc.setTextColor(100);
+  doc.setFontSize(9);
+  doc.setTextColor(120);
   let filterDesc = 'Filtros: ';
   if (personFilter) filterDesc += `Pessoa: ${personFilter} | `;
   if (dateFrom) filterDesc += `De: ${fmtDate(dateFrom)} | `;
   if (dateTo) filterDesc += `Até: ${fmtDate(dateTo)} | `;
   filterDesc += `Total: ${purchases.length} compra(s)`;
-  doc.text(filterDesc, 14, 28);
+  doc.text(filterDesc, 14, 25);
 
-  // Table data
-  const tableData = purchases.map(c => [
-    c.desc,
-    c.person + (c.person === getTitular() ? ' (Titular)' : ''),
-    c.installments > 1 ? `${c.installments}x` : 'À vista',
-    'R$ ' + c.totalValue.toFixed(2).replace('.', ','),
-    c.dateFmt,
-    c.addedAtFmt
+  // Build table rows manually — each row is a flat array of 6 strings
+  const headRow = [['Compra', 'Pessoa', 'Parcelas', 'Valor Total', 'Vencimento', 'Adicionado em']];
+  const bodyRows = purchases.map(c => [
+    String(c.desc || '—'),
+    String(c.person + (c.person === getTitular() ? ' (Titular)' : '')),
+    String(c.installments > 1 ? c.installments + 'x' : 'À vista'),
+    'R$ ' + Number(c.value).toFixed(2).replace('.', ','),
+    String(c.date ? fmtDate(c.date) : '—'),
+    String(c.addedAt ? fmtDate(c.addedAt) : '—')
   ]);
 
-  // Grand total
-  const grandTotal = purchases.reduce((s, c) => s + c.totalValue, 0);
+  const grandTotal = purchases.reduce((s, c) => s + Number(c.value || 0), 0);
+  const footRow = [['', '', '', 'Total: R$ ' + grandTotal.toFixed(2).replace('.', ','), '', '']];
 
-  doc.autoTable({
-    head: [['Compra', 'Pessoa', 'Parcelas', 'Valor Total', 'Vencimento', 'Adicionado em']],
-    body: tableData,
-    startY: 34,
-    foot: [['', '', '', 'Total: R$ ' + grandTotal.toFixed(2).replace('.', ','), '', '']],
-    footStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
-    headStyles: { fillColor: [99, 102, 241], textColor: 255 },
-    styles: { fontSize: 9, cellPadding: 4 },
+  // Use autoTable — try functional API first, fall back to plugin method
+  const tableConfig = {
+    head: headRow,
+    body: bodyRows,
+    foot: footRow,
+    startY: 30,
+    margin: { left: 14, right: 14 },
+    headStyles: { fillColor: [99, 102, 241], textColor: 255, fontSize: 9 },
+    bodyStyles: { fontSize: 9 },
+    footStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold', fontSize: 9 },
     columnStyles: {
-      3: { halign: 'right' }
+      0: { cellWidth: 60 },
+      1: { cellWidth: 40 },
+      2: { cellWidth: 25 },
+      3: { cellWidth: 35, halign: 'right' },
+      4: { cellWidth: 35 },
+      5: { cellWidth: 35 }
     }
-  });
+  };
+
+  if (typeof autoTable === 'function') {
+    autoTable(doc, tableConfig);
+  } else if (typeof doc.autoTable === 'function') {
+    doc.autoTable(tableConfig);
+  } else {
+    // Fallback: manual table drawing
+    console.error('autoTable plugin not loaded');
+    alert('Erro ao gerar PDF: plugin de tabela não carregou. Recarregue a página e tente novamente.');
+    return;
+  }
 
   // Footer with generation date
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setTextColor(150);
     doc.text(
-      `Gerado em ${new Date().toLocaleString('pt-BR')} - Controle Financeiro`,
+      'Gerado em ' + new Date().toLocaleString('pt-BR') + ' - Controle Financeiro',
       14, doc.internal.pageSize.height - 8
     );
   }
 
-  const filename = `compras-cartao${personFilter ? '-' + personFilter : ''}-${new Date().toISOString().split('T')[0]}.pdf`;
+  const filename = 'compras-cartao' + (personFilter ? '-' + personFilter : '') + '-' + new Date().toISOString().split('T')[0] + '.pdf';
   doc.save(filename);
   closeModal('creditPdfModal');
 }
