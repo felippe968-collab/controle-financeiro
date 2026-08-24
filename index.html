@@ -753,6 +753,8 @@ td .badge {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 /* ===== DASHBOARD ===== */
 .dashboard-year-label {
@@ -1127,7 +1129,10 @@ td .badge {
   <div class="section">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Compras do Cartão</div>
-      <button class="btn" onclick="openCreditModal()">+ Nova Compra</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" onclick="openCreditModal()">+ Nova Compra</button>
+        <button class="btn btn-ghost" onclick="openCreditPdfModal()">📄 Exportar PDF</button>
+      </div>
     </div>
 
     <!-- People Manager -->
@@ -1151,7 +1156,8 @@ td .badge {
             <th>Valor (R$)</th>
             <th>Quem Comprou</th>
             <th>Parcela</th>
-            <th>Data</th>
+            <th>Vencimento</th>
+            <th>Adicionado em</th>
             <th>Ações</th>
           </tr>
         </thead>
@@ -2209,6 +2215,8 @@ function saveCredit() {
     }
   } else {
     // Create new credit
+    const now = new Date();
+    const addedAtDate = now.toISOString().split('T')[0];
     const newCredit = {
       id: genId(),
       desc,
@@ -2218,7 +2226,8 @@ function saveCredit() {
       date,
       purchaseMonth,
       purchaseYear,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      addedAt: addedAtDate
     };
     db.credits.push(newCredit);
     saveDB();
@@ -2252,6 +2261,132 @@ function getCreditsForMonth(month, year) {
   });
 }
 
+
+function openCreditPdfModal() {
+  // Populate person filter dropdown
+  const personSelect = document.getElementById('pdfPersonFilter');
+  personSelect.innerHTML = '<option value="">Todas as pessoas</option>';
+  db.people.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p + (p === getTitular() ? ' (Titular)' : '');
+    personSelect.appendChild(opt);
+  });
+
+  // Default dates = current viewing month range
+  const monthStr = String(currentMonth).padStart(2, '0');
+  document.getElementById('pdfDateFrom').value = `${currentYear}-${monthStr}-01`;
+  const lastDay = new Date(currentYear, currentMonth, 0).getDate();
+  document.getElementById('pdfDateTo').value = `${currentYear}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
+  openModal('creditPdfModal');
+}
+
+function generateCreditPDF() {
+  const personFilter = document.getElementById('pdfPersonFilter').value;
+  const dateFrom = document.getElementById('pdfDateFrom').value;
+  const dateTo = document.getElementById('pdfDateTo').value;
+  const sortBy = document.getElementById('pdfSortBy').value;
+
+  // Gather ALL credit purchases (not just current month)
+  let purchases = db.credits.map(c => {
+    const d = new Date(c.date + 'T00:00:00');
+    return {
+      ...c,
+      totalValue: c.value,
+      addedAtFmt: c.addedAt ? fmtDate(c.addedAt) : '—',
+      dateFmt: fmtDate(c.date)
+    };
+  });
+
+  // Filter by person
+  if (personFilter) {
+    purchases = purchases.filter(c => c.person === personFilter);
+  }
+
+  // Filter by date range (based on purchase date / vencimento)
+  if (dateFrom) {
+    purchases = purchases.filter(c => c.date >= dateFrom);
+  }
+  if (dateTo) {
+    purchases = purchases.filter(c => c.date <= dateTo);
+  }
+
+  if (purchases.length === 0) {
+    alert('Nenhuma compra encontrada com os filtros selecionados.');
+    return;
+  }
+
+  // Sort
+  purchases.sort((a, b) => {
+    if (sortBy === 'value') return b.totalValue - a.totalValue;
+    if (sortBy === 'person') return a.person.localeCompare(b.person);
+    if (sortBy === 'desc') return a.desc.localeCompare(b.desc);
+    if (sortBy === 'addedAt') return (a.addedAt || '').localeCompare(b.addedAt || '');
+    return a.date.localeCompare(b.date); // default: date
+  });
+
+  // Generate PDF
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape' });
+
+  // Title
+  doc.setFontSize(18);
+  doc.text('Compras do Cartão de Crédito', 14, 20);
+
+  // Filters summary
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  let filterDesc = 'Filtros: ';
+  if (personFilter) filterDesc += `Pessoa: ${personFilter} | `;
+  if (dateFrom) filterDesc += `De: ${fmtDate(dateFrom)} | `;
+  if (dateTo) filterDesc += `Até: ${fmtDate(dateTo)} | `;
+  filterDesc += `Total: ${purchases.length} compra(s)`;
+  doc.text(filterDesc, 14, 28);
+
+  // Table data
+  const tableData = purchases.map(c => [
+    c.desc,
+    c.person + (c.person === getTitular() ? ' (Titular)' : ''),
+    c.installments > 1 ? `${c.installments}x` : 'À vista',
+    'R$ ' + c.totalValue.toFixed(2).replace('.', ','),
+    c.dateFmt,
+    c.addedAtFmt
+  ]);
+
+  // Grand total
+  const grandTotal = purchases.reduce((s, c) => s + c.totalValue, 0);
+
+  doc.autoTable({
+    head: [['Compra', 'Pessoa', 'Parcelas', 'Valor Total', 'Vencimento', 'Adicionado em']],
+    body: tableData,
+    startY: 34,
+    foot: [['', '', '', 'Total: R$ ' + grandTotal.toFixed(2).replace('.', ','), '', '']],
+    footStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
+    headStyles: { fillColor: [99, 102, 241], textColor: 255 },
+    styles: { fontSize: 9, cellPadding: 4 },
+    columnStyles: {
+      3: { halign: 'right' }
+    }
+  });
+
+  // Footer with generation date
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(
+      `Gerado em ${new Date().toLocaleString('pt-BR')} - Controle Financeiro`,
+      14, doc.internal.pageSize.height - 8
+    );
+  }
+
+  const filename = `compras-cartao${personFilter ? '-' + personFilter : ''}-${new Date().toISOString().split('T')[0]}.pdf`;
+  doc.save(filename);
+  closeModal('creditPdfModal');
+}
+
 function renderCredits() {
   const tbody = document.getElementById('creditBody');
   const empty = document.getElementById('creditEmpty');
@@ -2275,7 +2410,8 @@ function renderCredits() {
       <td data-label="Valor" style="font-weight:700;color:var(--primary-hover);font-size:1.05rem">${fmtMoney(c.parcelValue)}</td>
       <td data-label="Quem Comprou">${c.person === getTitular() ? `<strong style="color:var(--success)">${c.person} (Titular)</strong>` : c.person}</td>
       <td data-label="Parcela"><span class="badge-parcel">${c.installments > 1 ? c.currentParcel + '/' + c.installments : 'À vista'}</span></td>
-      <td data-label="Data" style="color:var(--text-muted)">${fmtDate(c.date)}</td>
+      <td data-label="Vencimento" style="color:var(--text-muted)">${fmtDate(c.date)}</td>
+      <td data-label="Adicionado em" style="color:var(--text-muted);font-size:.85rem">${c.addedAt ? fmtDate(c.addedAt) : '—'}</td>
       <td data-label="Ações" style="padding-top:8px;border-top:1px solid var(--border)">
         <button class="icon-btn" onclick="openCreditModal(db.credits.find(c=>c.id==='${c.id}'))" title="Editar">✏️</button>
         <button class="icon-btn danger" onclick="deleteCredit('${c.id}')" title="Excluir">🗑️</button>
@@ -3372,5 +3508,43 @@ document.getElementById('authEmail').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('authPassword').focus();
 });
 </script>
+
+<!-- ===== MODAL: CREDIT PDF EXPORT ===== -->
+<div class="modal-overlay" id="creditPdfModal">
+  <div class="modal">
+    <h2>📄 Exportar Compras em PDF</h2>
+    <div class="form-group">
+      <label>Pessoa</label>
+      <select id="pdfPersonFilter">
+        <option value="">Todas as pessoas</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Data Início</label>
+        <input type="date" id="pdfDateFrom">
+      </div>
+      <div class="form-group">
+        <label>Data Fim</label>
+        <input type="date" id="pdfDateTo">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Ordenar por</label>
+      <select id="pdfSortBy">
+        <option value="date">Data de vencimento</option>
+        <option value="addedAt">Data de adição</option>
+        <option value="person">Pessoa</option>
+        <option value="desc">Descrição</option>
+        <option value="value">Valor</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('creditPdfModal')">Cancelar</button>
+      <button class="btn btn-success" onclick="generateCreditPDF()">Gerar PDF</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
