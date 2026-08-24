@@ -1152,12 +1152,12 @@ td .badge {
       <table id="creditTable">
         <thead>
           <tr>
-            <th>Compra</th>
-            <th>Valor (R$)</th>
-            <th>Quem Comprou</th>
-            <th>Parcela</th>
-            <th>Vencimento</th>
-            <th>Adicionado em</th>
+            <th onclick="sortCredits('desc')" style="cursor:pointer;user-select:none">Compra<span id="creditSortIcon-desc" class="sort-icon"></span></th>
+            <th onclick="sortCredits('valor')" style="cursor:pointer;user-select:none">Valor (R$)<span id="creditSortIcon-valor" class="sort-icon"></span></th>
+            <th onclick="sortCredits('person')" style="cursor:pointer;user-select:none">Quem Comprou<span id="creditSortIcon-person" class="sort-icon"></span></th>
+            <th onclick="sortCredits('parcela')" style="cursor:pointer;user-select:none">Parcela<span id="creditSortIcon-parcela" class="sort-icon"></span></th>
+            <th onclick="sortCredits('vencimento')" style="cursor:pointer;user-select:none">Vencimento<span id="creditSortIcon-vencimento" class="sort-icon"></span></th>
+            <th onclick="sortCredits('addedAt')" style="cursor:pointer;user-select:none">Adicionado em<span id="creditSortIcon-addedAt" class="sort-icon"></span></th>
             <th>Ações</th>
           </tr>
         </thead>
@@ -2485,10 +2485,49 @@ function generateCreditPDF() {
   closeModal('creditPdfModal');
 }
 
+// ===== CREDIT SORTING =====
+let creditSortField = null;
+let creditSortDir = 'asc';
+
+function sortCredits(field) {
+  if (creditSortField === field) {
+    creditSortDir = creditSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    creditSortField = field;
+    creditSortDir = 'asc';
+  }
+  renderCredits();
+  updateCreditSortIcons();
+}
+
+function updateCreditSortIcons() {
+  ['desc', 'valor', 'person', 'parcela', 'vencimento', 'addedAt'].forEach(f => {
+    const el = document.getElementById('creditSortIcon-' + f);
+    if (!el) return;
+    el.textContent = creditSortField === f ? (creditSortDir === 'asc' ? ' \u25b2' : ' \u25bc') : '';
+  });
+}
+
+function compareCredits(a, b, field, dir) {
+  let va, vb;
+  switch (field) {
+    case 'desc': va = (a.desc || '').toLowerCase(); vb = (b.desc || '').toLowerCase(); break;
+    case 'valor': va = a.parcelValue; vb = b.parcelValue; break;
+    case 'person': va = (a.person || '').toLowerCase(); vb = (b.person || '').toLowerCase(); break;
+    case 'parcela': va = a.installments > 1 ? a.currentParcel : 0; vb = b.installments > 1 ? b.currentParcel : 0; break;
+    case 'vencimento': va = a.date || ''; vb = b.date || ''; break;
+    case 'addedAt': va = a.addedAt || ''; vb = b.addedAt || ''; break;
+    default: return 0;
+  }
+  if (va < vb) return dir === 'asc' ? -1 : 1;
+  if (va > vb) return dir === 'asc' ? 1 : -1;
+  return 0;
+}
+
 function renderCredits() {
   const tbody = document.getElementById('creditBody');
   const empty = document.getElementById('creditEmpty');
-  const credits = getCreditsForMonth(currentMonth, currentYear);
+  let credits = getCreditsForMonth(currentMonth, currentYear);
 
   // Always render people manager even if no credits
   renderPeopleManager();
@@ -2501,6 +2540,11 @@ function renderCredits() {
     return;
   }
   empty.style.display = 'none';
+
+  // Apply sorting if a sort field is selected
+  if (creditSortField) {
+    credits = [...credits].sort((a, b) => compareCredits(a, b, creditSortField, creditSortDir));
+  }
 
   tbody.innerHTML = credits.map(c => `
     <tr>
