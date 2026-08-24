@@ -2158,10 +2158,11 @@ function openCreditModal(credit = null) {
     document.getElementById('creditValue').value = '';
     document.getElementById('creditInstallments').value = '1';
     // Default date = next month from current viewing month
+    // currentMonth is 1-indexed (1-12), so nextMonth is already correct 1-indexed
     let nextMonth = currentMonth + 1;
     let nextYear = currentYear;
-    if (nextMonth > 11) { nextMonth = 0; nextYear++; }
-    const nextMonthStr = String(nextMonth + 1).padStart(2, '0');
+    if (nextMonth > 12) { nextMonth = 1; nextYear++; }
+    const nextMonthStr = String(nextMonth).padStart(2, '0');
     const nextDayStr = String(new Date().getDate()).padStart(2, '0');
     document.getElementById('creditDate').value = `${nextYear}-${nextMonthStr}-${nextDayStr}`;
     updateCreditPersonDropdown();
