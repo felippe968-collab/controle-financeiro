@@ -2262,6 +2262,55 @@ function getCreditsForMonth(month, year) {
 }
 
 
+function validatePdfDateRange() {
+  const fromInput = document.getElementById('pdfDateFrom');
+  const toInput = document.getElementById('pdfDateTo');
+  const dateFrom = fromInput.value;
+  const dateTo = toInput.value;
+
+  // If both filled, check order
+  if (dateFrom && dateTo) {
+    const dFrom = new Date(dateFrom + 'T00:00:00');
+    const dTo = new Date(dateTo + 'T00:00:00');
+
+    if (isNaN(dFrom.getTime())) {
+      alert('Data inicial inválida! Verifique o dia do mês.');
+      fromInput.value = '';
+      return;
+    }
+    if (isNaN(dTo.getTime())) {
+      alert('Data final inválida! Verifique o dia do mês.');
+      toInput.value = '';
+      return;
+    }
+    if (dFrom > dTo) {
+      alert('A data inicial não pode ser maior que a data final!');
+      toInput.value = dateFrom;
+      return;
+    }
+  }
+
+  // Validate individual dates (browsers may allow invalid days like 31/09)
+  if (dateFrom) {
+    const d = new Date(dateFrom + 'T00:00:00');
+    const [y, m, day] = dateFrom.split('-').map(Number);
+    if (d.getDate() !== day || d.getMonth() !== m - 1 || d.getFullYear() !== y) {
+      alert('Data inicial inválida! Esse dia não existe no mês selecionado.\nExemplo: setembro tem apenas 30 dias.');
+      fromInput.value = '';
+      return;
+    }
+  }
+  if (dateTo) {
+    const d = new Date(dateTo + 'T00:00:00');
+    const [y, m, day] = dateTo.split('-').map(Number);
+    if (d.getDate() !== day || d.getMonth() !== m - 1 || d.getFullYear() !== y) {
+      alert('Data final inválida! Esse dia não existe no mês selecionado.\nExemplo: setembro tem apenas 30 dias.');
+      toInput.value = '';
+      return;
+    }
+  }
+}
+
 function openCreditPdfModal() {
   // Populate person filter dropdown
   const personSelect = document.getElementById('pdfPersonFilter');
@@ -2287,6 +2336,28 @@ function generateCreditPDF() {
   const dateFrom = document.getElementById('pdfDateFrom').value;
   const dateTo = document.getElementById('pdfDateTo').value;
   const sortBy = document.getElementById('pdfSortBy').value;
+
+  // Validate dates
+  if (dateFrom && dateTo) {
+    const dFrom = new Date(dateFrom + 'T00:00:00');
+    const dTo = new Date(dateTo + 'T00:00:00');
+    if (isNaN(dFrom.getTime()) || isNaN(dTo.getTime())) {
+      alert('Data inválida! Verifique as datas informadas.');
+      return;
+    }
+    if (dFrom > dTo) {
+      alert('A data inicial não pode ser maior que a data final!');
+      return;
+    }
+  }
+  if (dateFrom && isNaN(new Date(dateFrom + 'T00:00:00').getTime())) {
+    alert('Data inicial inválida!');
+    return;
+  }
+  if (dateTo && isNaN(new Date(dateTo + 'T00:00:00').getTime())) {
+    alert('Data final inválida!');
+    return;
+  }
 
   // Deduplicate by ID (in case of sync issues)
   const seenIds = new Set();
@@ -3549,11 +3620,11 @@ document.getElementById('authEmail').addEventListener('keydown', (e) => {
     <div class="form-row">
       <div class="form-group">
         <label>Data Início</label>
-        <input type="date" id="pdfDateFrom">
+        <input type="date" id="pdfDateFrom" onchange="validatePdfDateRange()">
       </div>
       <div class="form-group">
         <label>Data Fim</label>
-        <input type="date" id="pdfDateTo">
+        <input type="date" id="pdfDateTo" onchange="validatePdfDateRange()">
       </div>
     </div>
     <div class="form-group">
