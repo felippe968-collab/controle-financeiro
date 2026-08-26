@@ -18,6 +18,19 @@
   --danger-light: rgba(239, 68, 68, 0.15);
   --warning: #f59e0b;
   --warning-light: rgba(245, 158, 11, 0.15);
+
+  /* Section accent colors */
+  --income-accent: #10b981;
+  --income-accent-light: rgba(16, 185, 129, 0.08);
+  --income-border: rgba(16, 185, 129, 0.3);
+
+  --bills-accent: #f59e0b;
+  --bills-accent-light: rgba(245, 158, 11, 0.08);
+  --bills-border: rgba(245, 158, 11, 0.3);
+
+  --credit-accent: #ec4899;
+  --credit-accent-light: rgba(236, 72, 153, 0.08);
+  --credit-border: rgba(236, 72, 153, 0.3);
   --text: #f1f5f9;
   --text-muted: #94a3b8;
   --border: #334155;
@@ -214,6 +227,34 @@ body {
   border-radius: 4px;
   background: var(--primary);
 }
+
+/* Income section — green */
+.section-income {
+  background: var(--surface);
+  border-left: 4px solid var(--income-accent);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--income-accent);
+}
+.section-income .section-title .icon { background: var(--income-accent); }
+.section-income .section-header { border-bottom: 2px solid var(--income-border); padding-bottom: 12px; }
+
+/* Bills section — amber */
+.section-bills {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--bills-accent);
+}
+.section-bills .section-title .icon { background: var(--bills-accent); }
+.section-bills .section-header { border-bottom: 2px solid var(--bills-border); padding-bottom: 12px; }
+
+/* Credit section — pink */
+.section-credit {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--credit-accent);
+}
+.section-credit .section-title .icon { background: var(--credit-accent); }
+.section-credit .section-header { border-bottom: 2px solid var(--credit-border); padding-bottom: 12px; }
 
 .btn {
   background: var(--primary);
@@ -1075,7 +1116,7 @@ td .badge {
 
 <!-- ===== TAB: INCOME ===== -->
 <div class="tab-section" id="tab-income">
-  <div class="section">
+  <div class="section section-income">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Ganhos e Receitas do Mês</div>
       <button class="btn" onclick="openIncomeModal()">+ Novo Ganho</button>
@@ -1099,7 +1140,7 @@ td .badge {
 
 <!-- ===== TAB: BILLS ===== -->
 <div class="tab-section" id="tab-bills">
-  <div class="section">
+  <div class="section section-bills">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Contas Fixas e Parceladas</div>
       <button class="btn" onclick="openBillModal()">+ Nova Conta</button>
@@ -1126,7 +1167,7 @@ td .badge {
 
 <!-- ===== TAB: CREDIT CARD ===== -->
 <div class="tab-section" id="tab-credit">
-  <div class="section">
+  <div class="section section-credit">
     <div class="section-header">
       <div class="section-title"><span class="icon"></span> Compras do Cartão</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
