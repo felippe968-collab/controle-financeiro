@@ -4,11 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Controle Financeiro Pessoal</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💰</text></svg>">
-
 <style>
 :root {
-  --bg: #000000;
+  --bg: #1e293b;
   --surface: #1e293b;
   --surface-light: #334155;
   --primary: #6366f1;
@@ -2404,20 +2402,46 @@ function generateCreditPDF() {
 
   // Deduplicate by ID (in case of sync issues)
   const seenIds = new Set();
-  let purchases = db.credits.filter(c => {
+  let uniqueCredits = db.credits.filter(c => {
     if (seenIds.has(c.id)) return false;
     seenIds.add(c.id);
     return true;
-  }).map(c => {
-    return {
-      id: c.id,
-      desc: c.desc || '—',
-      person: c.person || '—',
-      installments: c.installments || 1,
-      value: c.value || 0,
-      date: c.date || '',
-      addedAt: c.addedAt || ''
-    };
+  });
+
+  // Expand each purchase into individual parcels with correct vencimento date and parcel value
+  let purchases = [];
+  uniqueCredits.forEach(c => {
+    const installments = c.installments || 1;
+    const parcelValue = (c.value || 0) / installments;
+    const baseDate = c.date || '';
+    if (!baseDate) return;
+
+    // Parse the base vencimento date (first parcel)
+    const baseDateObj = new Date(baseDate + 'T00:00:00');
+    if (isNaN(baseDateObj.getTime())) return;
+    const baseYear = baseDateObj.getFullYear();
+    const baseMonth = baseDateObj.getMonth();
+
+    for (let i = 0; i < installments; i++) {
+      const parcelMonth = baseMonth + i;
+      const parcelDate = new Date(baseYear, parcelMonth, 1);
+      const parcelDateStr = parcelDate.getFullYear() + '-' +
+        String(parcelDate.getMonth() + 1).padStart(2, '0') + '-' +
+        String(baseDateObj.getDate()).padStart(2, '0');
+
+      purchases.push({
+        id: c.id + '_p' + (i + 1),
+        originalId: c.id,
+        desc: c.desc || '—',
+        person: c.person || '—',
+        installments: installments,
+        currentParcel: i + 1,
+        parcelValue: parcelValue,
+        totalValue: c.value || 0,
+        date: parcelDateStr,
+        addedAt: c.addedAt || ''
+      });
+    }
   });
 
   // Filter by person (exact match)
@@ -2440,7 +2464,7 @@ function generateCreditPDF() {
 
   // Sort
   purchases.sort((a, b) => {
-    if (sortBy === 'value') return b.value - a.value;
+    if (sortBy === 'value') return b.parcelValue - a.parcelValue;
     if (sortBy === 'person') return a.person.localeCompare(b.person);
     if (sortBy === 'desc') return a.desc.localeCompare(b.desc);
     if (sortBy === 'addedAt') return (a.addedAt || '').localeCompare(b.addedAt || '');
@@ -2467,17 +2491,17 @@ function generateCreditPDF() {
   doc.text(filterDesc, 14, 25);
 
   // Build table rows manually — each row is a flat array of 6 strings
-  const headRow = [['Compra', 'Pessoa', 'Parcelas', 'Valor Total', 'Vencimento', 'Adicionado em']];
+  const headRow = [['Compra', 'Pessoa', 'Parcela', 'Valor da Parcela', 'Vencimento', 'Adicionado em']];
   const bodyRows = purchases.map(c => [
     String(c.desc || '—'),
     String(c.person + (c.person === getTitular() ? ' (Titular)' : '')),
-    String(c.installments > 1 ? c.installments + 'x' : 'À vista'),
-    'R$ ' + Number(c.value).toFixed(2).replace('.', ','),
+    String(c.installments > 1 ? c.currentParcel + '/' + c.installments : 'À vista'),
+    'R$ ' + Number(c.parcelValue).toFixed(2).replace('.', ','),
     String(c.date ? fmtDate(c.date) : '—'),
     String(c.addedAt ? fmtDate(c.addedAt) : '—')
   ]);
 
-  const grandTotal = purchases.reduce((s, c) => s + Number(c.value || 0), 0);
+  const grandTotal = purchases.reduce((s, c) => s + Number(c.parcelValue || 0), 0);
   const footRow = [['', '', '', 'Total: R$ ' + grandTotal.toFixed(2).replace('.', ','), '', '']];
 
   // Use autoTable — try functional API first, fall back to plugin method
@@ -2491,9 +2515,9 @@ function generateCreditPDF() {
     bodyStyles: { fontSize: 9 },
     footStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold', fontSize: 9 },
     columnStyles: {
-      0: { cellWidth: 60 },
-      1: { cellWidth: 40 },
-      2: { cellWidth: 25 },
+      0: { cellWidth: 55 },
+      1: { cellWidth: 35 },
+      2: { cellWidth: 22 },
       3: { cellWidth: 35, halign: 'right' },
       4: { cellWidth: 35 },
       5: { cellWidth: 35 }
