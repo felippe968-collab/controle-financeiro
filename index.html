@@ -41,6 +41,24 @@
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -4px rgba(0,0,0,0.2);
 }
 
+/* ===== LIGHT MODE (day theme) — per-user preference ===== */
+body.light-mode {
+  --bg: #eef2f7;
+  --surface: #ffffff;
+  --surface-light: #dbe3ee;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --border: #cbd5e1;
+  --primary-light: rgba(99, 102, 241, 0.12);
+  --success-light: rgba(16, 185, 129, 0.12);
+  --danger-light: rgba(239, 68, 68, 0.1);
+  --warning-light: rgba(245, 158, 11, 0.12);
+  --shadow: 0 4px 6px -1px rgba(15,23,42,0.08), 0 2px 4px -2px rgba(15,23,42,0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(15,23,42,0.1), 0 4px 6px -4px rgba(15,23,42,0.05);
+}
+
+body.light-mode .modal-overlay { background: rgba(15,23,42,0.4); }
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
@@ -1088,6 +1106,7 @@ td .badge {
     <button class="install-btn" id="installBtn" onclick="installApp()">
       📲 Instalar no Dispositivo
     </button>
+    <button class="data-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Alternar modo noturno/diurno">☀️ Dia</button>
     <button class="data-btn" onclick="openDataModal()" title="Gerenciar dados">📦 Dados</button>
     <div class="profile-section" id="authSection"></div>
   </div>
@@ -2731,9 +2750,10 @@ function renderDashboard() {
     </div>
   `;
 
-  // Chart colors
-  const textStyle = '#94a3b8';
-  const gridColor = 'rgba(51,65,85,0.4)';
+  // Chart colors — adapt to current theme (light/dark)
+  const isLight = document.body.classList.contains('light-mode');
+  const textStyle = isLight ? '#64748b' : '#94a3b8';
+  const gridColor = isLight ? 'rgba(100,116,139,0.2)' : 'rgba(51,65,85,0.4)';
   const incomeColor = '#10b981';
   const expenseColor = '#ef4444';
   const primaryColor = '#818cf8';
@@ -2874,6 +2894,65 @@ const SUPABASE_URL = 'https://dahqnvjyufwcqkuiubjs.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhaHFudmp5dWZ3Y3FrdWl1YmpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1ODA5NTMsImV4cCI6MjEwMjE1Njk1M30.bBYQ9aNqQVU29ooTbGFGh3s-L3ztg_4j9EGOeIY_sYU';
 let supabaseClient = null;
 let currentUser = null;
+
+// ===== THEME (per-user, light/dark mode) =====
+function getThemeKey() {
+  // Keyed per-user so each logged-in account has its own preference
+  return 'theme_pref_' + (currentUser ? currentUser.id : 'guest');
+}
+
+function applyTheme(theme) {
+  if (theme === 'light') {
+    document.body.classList.add('light-mode');
+  } else {
+    document.body.classList.remove('light-mode');
+  }
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) {
+    btn.textContent = theme === 'light' ? '🌙 Noite' : '☀️ Dia';
+    btn.title = theme === 'light' ? 'Mudar para modo noturno' : 'Mudar para modo diurno';
+  }
+  // Re-render charts with theme-appropriate colors
+  if (typeof renderAll === 'function' && typeof Chart !== 'undefined') {
+    try { renderAll(); } catch (e) { /* charts not ready yet */ }
+  }
+}
+
+function getCurrentTheme() {
+  return document.body.classList.contains('light-mode') ? 'light' : 'dark';
+}
+
+function loadTheme() {
+  // Priority: Supabase user_metadata > localStorage > dark (default)
+  let theme = null;
+  if (currentUser && currentUser.user_metadata && currentUser.user_metadata.theme) {
+    theme = currentUser.user_metadata.theme;
+  }
+  if (!theme) {
+    theme = localStorage.getItem(getThemeKey()) || 'dark';
+  }
+  applyTheme(theme);
+}
+
+function toggleTheme() {
+  const newTheme = getCurrentTheme() === 'light' ? 'dark' : 'light';
+  applyTheme(newTheme);
+  // Save locally (keyed per-user)
+  localStorage.setItem(getThemeKey(), newTheme);
+  // Sync to Supabase so preference follows the account across devices
+  if (isOnlineMode && supabaseClient && currentUser) {
+    supabaseClient.auth.updateUser({
+      data: { theme: newTheme }
+    }).then(() => {
+      // Refresh cached user object so metadata reflects the change
+      supabaseClient.auth.getUser().then(({ data }) => {
+        if (data && data.user) currentUser = data.user;
+      }).catch(() => {});
+    }).catch((err) => {
+      console.warn('[THEME] Failed to sync theme to cloud:', err.message);
+    });
+  }
+}
 let isOnlineMode = false;
 
 function initSupabase() {
@@ -2903,11 +2982,13 @@ function initSupabase() {
       currentUser = session.user;
       isOnlineMode = true;
       updateAuthUI();
+      loadTheme(); // apply this user's saved theme preference
       loadDataFromSupabase();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       isOnlineMode = false;
       updateAuthUI();
+      loadTheme(); // revert to guest theme preference
       loadDB();
       renderAll();
     } else if (event === 'INITIAL_SESSION' && !session) {
@@ -3512,6 +3593,7 @@ function renderAll() {
 
 // ===== INIT =====
 loadDB();
+applyTheme(localStorage.getItem('theme_pref_guest') || 'dark');
 initPeriodSelector();
 renderAll();
 setupPWA();
