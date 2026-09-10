@@ -3017,8 +3017,23 @@ const DRIVE_TOMB_DAYS = 30;    // por quanto tempo lembrar exclusões p/ replic�
 const DRIVE_MTIME_KEY = 'drive_last_cloud_mtime';
 const SYNC_TYPES = ['bills', 'credits', 'incomes'];
 
-// Serialização estável (chaves ordenadas) para comparar registros
-function driveCanon(r) { const o = { ...r }; delete o._ts; return JSON.stringify(o, Object.keys(o).sort()); }
+// Serialização estável (ordena chaves em TODOS os níveis) para comparar registros.
+// Nota: NÃO usar JSON.stringify com array de chaves — ele descarta objetos aninhados
+// (ex.: bill.paid), tornando mudanças de status invisíveis ao sync.
+function driveCanon(r) {
+  const sortAll = (x) => {
+    if (Array.isArray(x)) return x.map(sortAll);
+    if (x && typeof x === 'object') {
+      const out = {};
+      for (const k of Object.keys(x).sort()) out[k] = sortAll(x[k]);
+      return out;
+    }
+    return x;
+  };
+  const o = { ...r };
+  delete o._ts;
+  return JSON.stringify(sortAll(o));
+}
 
 // Carimba cada registro novo/alterado com _ts e registra exclusões (tombstones)
 function driveStampChanges() {
