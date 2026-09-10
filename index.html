@@ -3005,6 +3005,7 @@ function toggleTheme() {
   }
 }
 // ================== MÓDULO GOOGLE DRIVE ==================
+const DRIVE_IMG = '<img src="drive-icon.png" alt="Drive" style="height:15px;width:14px;vertical-align:-2.5px;margin-right:3px">';
 let _driveTokenClient = null;
 let _driveAutoBackupTimer = null;
 
@@ -3030,10 +3031,49 @@ function initGoogleDrive() {
       }));
       updateDriveUI();
       updateBackupWarningVisibility();
-      alert('✅ Google Drive conectado! Seus dados serão salvos automaticamente na SUA conta Google.');
-      driveBackupNow(true); // primeira sincronização imediata
+      afterConnectFlow(); // NUNCA sobrescreve a nuvem às cegas
     }
   });
+}
+
+// Fluxo pós-conexão: nuvem primeiro, dispositivo depois
+async function afterConnectFlow() {
+  const token = driveGetToken();
+  if (!token) return;
+  let existing = null;
+  try {
+    const listRes = await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=10', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (listRes.status === 401) { driveHandleAuthError(); return; }
+    const listData = await listRes.json();
+    existing = (listData.files || []).find(f => f.name === DRIVE_BACKUP_NAME);
+  } catch(e) {
+    console.error('[DRIVE] Checagem pós-conexão falhou:', e);
+  }
+
+  if (!existing) {
+    driveBackupNow(true); // nuvem vazia → primeiro backup deste dispositivo
+    return;
+  }
+
+  localStorage.setItem(DRIVE_FILE_ID_KEY, existing.id);
+  const when = new Date(existing.modifiedTime).toLocaleString('pt-BR');
+  if (driveLocalDBEmpty()) {
+    // Dispositivo novo/limpo: oferece restaurar o backup da nuvem
+    if (confirm('☁️ Encontramos um backup de ' + when + ' no seu Google Drive.\n\nRestaurar os dados neste dispositivo?')) {
+      await restoreFromDrive(true);
+    }
+  } else {
+    // Dispositivo com dados: pergunta o que prevalece (NUNCA sobrescreve a nuvem sem resposta)
+    if (confirm('☁️ Encontramos um backup de ' + when + ' no seu Google Drive.\n\nOK = Restaurar o backup da nuvem (substitui os dados deste dispositivo)\nCancelar = Manter os dados deste dispositivo')) {
+      await restoreFromDrive(true);
+    }
+  }
+}
+
+function driveLocalDBEmpty() {
+  return (db.bills||[]).length === 0 && (db.credits||[]).length === 0 && (db.incomes||[]).length === 0;
 }
 
 function driveGetToken() {
@@ -3136,7 +3176,7 @@ async function driveBackupNow(manual) {
     }
     localStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
     const badge = document.getElementById('driveStatusBadge');
-    if (badge) badge.textContent = '☁️ Salvo ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (badge) badge.innerHTML = DRIVE_IMG + 'Salvo ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     if (manual) alert('✅ Backup salvo no seu Google Drive com sucesso!');
   } catch(e) {
     console.error('[DRIVE] Backup falhou:', e);
@@ -3152,7 +3192,7 @@ function driveHandleAuthError() {
   renderDriveSection();
 }
 
-async function restoreFromDrive() {
+async function restoreFromDrive(skipConfirm) {
   const token = driveGetToken();
   if (!token) {
     alert('Conecte seu Google Drive primeiro.');
@@ -3168,13 +3208,20 @@ async function restoreFromDrive() {
     const existing = (listData.files || []).find(f => f.name === DRIVE_BACKUP_NAME);
     if (!existing) { alert('Nenhum backup encontrado no seu Google Drive.'); return; }
     const when = new Date(existing.modifiedTime).toLocaleString('pt-BR');
-    if (!confirm('Encontramos um backup do seu Google Drive salvo em ' + when + '.\n\nRestaurar? Isso vai SUBSTITUIR os dados atuais deste dispositivo.')) return;
+    if (!skipConfirm && !confirm('Encontramos um backup do seu Google Drive salvo em ' + when + '.\n\nRestaurar? Isso vai SUBSTITUIR os dados atuais deste dispositivo.')) return;
 
     const dlRes = await fetch('https://www.googleapis.com/drive/v3/files/' + existing.id + '?alt=media', {
       headers: { Authorization: 'Bearer ' + token }
     });
     if (!dlRes.ok) throw new Error('HTTP ' + dlRes.status);
     const data = await dlRes.json();
+
+    // GUARDA: nuvem vazia + dispositivo com dados → cancela para não apagar nada
+    const cloudEmpty = !((data.bills||[]).length || (data.credits||[]).length || (data.incomes||[]).length);
+    if (cloudEmpty && !driveLocalDBEmpty()) {
+      alert('⚠️ O backup da nuvem está vazio e este dispositivo possui dados.\nRestauração cancelada para proteger seus dados.\n\nDica: use "Salvar no Drive agora" para enviar os dados deste dispositivo para a nuvem.');
+      return;
+    }
 
     _lastImportAt = Date.now(); // proteção contra sobrescrita
     db = { ...db, ...data };
@@ -3194,11 +3241,11 @@ function updateDriveUI() {
   const container = document.getElementById('authSection');
   if (!container) return;
   if (driveConnected()) {
-    container.innerHTML = '<span class="sync-badge online" id="driveStatusBadge" title="Backup automático no seu Google Drive">☁️ Drive ✓</span>';
+    container.innerHTML = '<span class="sync-badge online" id="driveStatusBadge" title="Backup automático no seu Google Drive">' + DRIVE_IMG + 'Drive ✓</span>';
   } else if (driveTokenExistsButExpired()) {
-    container.innerHTML = '<button class="login-btn" onclick="connectGoogleDrive()" title="Sua conexão com o Google Drive expirou — reconectar">☁️ Reconectar</button>';
+    container.innerHTML = '<button class="login-btn" onclick="connectGoogleDrive()" title="Sua conexão com o Google Drive expirou — reconectar">' + DRIVE_IMG + 'Reconectar</button>';
   } else {
-    container.innerHTML = '<button class="login-btn" onclick="connectGoogleDrive()" title="Conectar sua conta Google para backup automático na nuvem">☁️ Entrar</button>';
+    container.innerHTML = '<button class="login-btn" onclick="connectGoogleDrive()" title="Conectar sua conta Google para backup automático na nuvem">' + DRIVE_IMG + 'Entrar</button>';
   }
   renderDriveSection();
 }
@@ -3210,17 +3257,17 @@ function renderDriveSection() {
   const expired = !connected && driveTokenExistsButExpired();
   let html = '';
   if (connected) {
-    html = '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.82rem;line-height:1.5;margin-bottom:8px">☁️ <strong>Google Drive conectado.</strong> Backup automático a cada alteração, na SUA conta Google (pasta privada).</div>';
+    html = '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.82rem;line-height:1.5;margin-bottom:8px">' + DRIVE_IMG + '<strong>Google Drive conectado.</strong> Backup automático a cada alteração, na SUA conta Google (pasta privada).</div>';
   } else if (expired) {
     html = '<div style="padding:10px;background:var(--bg);border:1px solid var(--warning);border-radius:var(--radius-sm);font-size:.82rem;line-height:1.5;margin-bottom:8px">⚠️ Sua conexão com o Google Drive expirou. Reconecte para continuar com backup automático.</div>';
   } else {
-    html = '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.82rem;line-height:1.5;margin-bottom:8px">☁️ Conecte sua conta Google para backup automático na nuvem — os dados ficam na SUA conta, em uma pasta privada.</div>';
+    html = '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.82rem;line-height:1.5;margin-bottom:8px">' + DRIVE_IMG + 'Conecte sua conta Google para backup automático na nuvem — os dados ficam na SUA conta, em uma pasta privada.</div>';
   }
   html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
   if (!connected) {
-    html += '<button class="btn btn-sm" onclick="connectGoogleDrive()">☁️ ' + (expired ? 'Reconectar' : 'Conectar Google Drive') + '</button>';
+    html += '<button class="btn btn-sm" onclick="connectGoogleDrive()">' + DRIVE_IMG + (expired ? 'Reconectar' : 'Conectar Google Drive') + '</button>';
   } else {
-    html += '<button class="btn btn-sm" onclick="driveBackupNow(true)">☁️ Salvar no Drive agora</button>';
+    html += '<button class="btn btn-sm" onclick="driveBackupNow(true)">' + DRIVE_IMG + 'Salvar no Drive agora</button>';
     html += '<button class="btn btn-sm" onclick="disconnectGoogleDrive()">Desconectar</button>';
   }
   html += '<button class="btn btn-sm btn-ghost" onclick="restoreFromDrive()">Restaurar do Drive</button>';
