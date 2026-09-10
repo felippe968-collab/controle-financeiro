@@ -3060,13 +3060,13 @@ async function afterConnectFlow() {
   localStorage.setItem(DRIVE_FILE_ID_KEY, existing.id);
   const when = new Date(existing.modifiedTime).toLocaleString('pt-BR');
   if (driveLocalDBEmpty()) {
-    // Dispositivo novo/limpo: oferece restaurar o backup da nuvem
-    if (confirm('☁️ Encontramos um backup de ' + when + ' no seu Google Drive.\n\nRestaurar os dados neste dispositivo?')) {
-      await restoreFromDrive(true);
-    }
+    // Dispositivo novo/limpo: restaura AUTOMATICAMENTE o último backup da nuvem
+    // (zero cliques: conectou → os dados simplesmente aparecem)
+    await restoreFromDrive(true);
   } else {
-    // Dispositivo com dados: pergunta o que prevalece (NUNCA sobrescreve a nuvem sem resposta)
-    if (confirm('☁️ Encontramos um backup de ' + when + ' no seu Google Drive.\n\nOK = Restaurar o backup da nuvem (substitui os dados deste dispositivo)\nCancelar = Manter os dados deste dispositivo')) {
+    // Dispositivo com dados + nuvem com dados: único caso que pergunta,
+    // pra nunca apagar dados de ninguém sem querer
+    if (confirm('☁️ Este dispositivo já possui dados, e encontramos um backup de ' + when + ' no seu Google Drive.\n\nOK = Substituir os dados deste dispositivo pelo backup da nuvem\nCancelar = Manter os dados deste dispositivo')) {
       await restoreFromDrive(true);
     }
   }
