@@ -1073,6 +1073,31 @@ td .badge {
   justify-content: space-between;
 }
 .migrate-banner.visible { display: flex; }
+
+/* ===== LOCAL BACKUP WARNING BANNER ===== */
+.backup-warning-banner {
+  display: none;
+  background: var(--warning-light);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+.backup-warning-banner.visible { display: flex; }
+.backup-warning-banner .warn-text { flex: 1; min-width: 200px; color: var(--text); }
+.backup-warning-banner .warn-text strong { color: var(--warning); }
+.backup-warning-banner .warn-actions { display: flex; gap: 8px; align-items: center; }
+.backup-warning-banner .warn-dismiss {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 1.1rem; cursor: pointer; padding: 4px 8px;
+}
+.backup-warning-banner .warn-dismiss:hover { color: var(--text); }
 @media (max-width: 640px) {
   .profile-name { display: none; }
   .login-btn span { display: none; }
@@ -1117,6 +1142,17 @@ td .badge {
 <div class="migrate-banner" id="migrateBanner">
   <span>📥 Você tem dados salvos localmente. Deseja enviá-los para sua conta na nuvem?</span>
   <button class="btn btn-sm" onclick="migrateLocalToCloud()">Migrar Agora</button>
+</div>
+
+<!-- Local mode backup warning banner -->
+<div class="backup-warning-banner" id="backupWarningBanner">
+  <div class="warn-text">
+    ⚠️ <strong>Modo local:</strong> seus dados ficam salvos apenas neste navegador. Faça backup em JSON com frequência em 📦 Dados → Exportar. <strong>Não nos responsabilizamos</strong> por perda de dados ou mau uso decorrentes da falta de backup.
+  </div>
+  <div class="warn-actions">
+    <button class="btn btn-sm" onclick="exportLocalJSON()" style="white-space:nowrap">💾 Fazer Backup Agora</button>
+    <button class="warn-dismiss" onclick="dismissBackupWarning()" title="Não mostrar novamente por 7 dias">✕</button>
+  </div>
 </div>
 
 <!-- ===== SUMMARY CARDS ===== -->
@@ -1451,7 +1487,8 @@ td .badge {
       </button>
     </div>
     <div style="font-size:.82rem;color:var(--text-muted);line-height:1.6;padding:12px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border)">
-      💡 Seus dados são salvos automaticamente no navegador (LocalStorage). Use "Exportar" para criar um backup em arquivo, e "Importar" para restaurar.
+      💡 Seus dados são salvos automaticamente no navegador (LocalStorage). Use "Exportar" para criar um backup em arquivo, e "Importar" para restaurar.<br><br>
+      ⚠️ <strong style="color:var(--warning)">Sem login, os dados existem apenas neste dispositivo.</strong> Faça backup em JSON regularmente. <strong style="color:var(--warning)">Não nos responsabilizamos</strong> por perda de dados ou mau uso decorrentes da falta de backup.
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('dataModal')" style="flex:1">Fechar</button>
@@ -3237,6 +3274,7 @@ async function logoutUser() {
 function updateAuthUI() {
   const container = document.getElementById('authSection');
   if (!container) return;
+  updateBackupWarningVisibility(); // aviso de backup: some quando logado, volta ao sair
   if (currentUser) {
     const name = currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'Usuário';
     const avatar = currentUser.user_metadata?.avatar_url || '';
@@ -3592,8 +3630,34 @@ function renderAll() {
   renderDashboard();
 }
 
+// ===== LOCAL BACKUP WARNING (guest mode) =====
+const BACKUP_WARN_KEY = 'backup_warning_dismissed';
+
+function updateBackupWarningVisibility() {
+  const banner = document.getElementById('backupWarningBanner');
+  if (!banner) return;
+  // Only warn users who are NOT synced to the cloud
+  if (currentUser) {
+    banner.classList.remove('visible');
+    return;
+  }
+  const dismissedAt = parseInt(localStorage.getItem(BACKUP_WARN_KEY) || '0', 10);
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  if (dismissedAt && (Date.now() - dismissedAt) < sevenDays) {
+    banner.classList.remove('visible');
+  } else {
+    banner.classList.add('visible');
+  }
+}
+
+function dismissBackupWarning() {
+  localStorage.setItem(BACKUP_WARN_KEY, String(Date.now()));
+  updateBackupWarningVisibility();
+}
+
 // ===== INIT =====
 loadDB();
+updateBackupWarningVisibility();
 applyTheme(localStorage.getItem('theme_pref_guest') || 'dark');
 initPeriodSelector();
 renderAll();
