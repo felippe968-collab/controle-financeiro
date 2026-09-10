@@ -3146,6 +3146,8 @@ function driveStartSyncTimer() {
   if (_driveSyncTimer) return;
   _driveSyncTimer = setInterval(driveLiveSyncTick, DRIVE_SYNC_MS);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(driveLiveSyncTick, 500); });
+  // Pull IMEDIATO ao abrir o app: nada de esperar 60s p/ ver os dados de hoje
+  setTimeout(driveLiveSyncTick, 800);
 }
 let _driveAutoBackupTimer = null;
 
