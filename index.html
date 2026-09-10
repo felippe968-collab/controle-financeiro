@@ -1541,12 +1541,13 @@ function loadDB() {
       db = { ...db, ...parsed };
       // Ensure people array exists and titular is always present
       if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Titular'];
-      
+      try { _drivePrevDB = JSON.parse(JSON.stringify(db)); } catch(e) {} // baseline da sincronização
     }
   } catch(e) { console.warn('Erro ao carregar dados', e); }
 }
 
 function saveDB() {
+  if (typeof driveStampChanges === 'function') driveStampChanges(); // carimbos p/ sync entre dispositivos
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
   syncPeopleToSupabase();
   scheduleDriveBackup(); // backup automático no Drive do usuário (se conectado)
@@ -3007,6 +3008,145 @@ function toggleTheme() {
 // ================== MÓDULO GOOGLE DRIVE ==================
 const DRIVE_IMG = '<img src="drive-icon.png" alt="Drive" style="height:15px;width:14px;vertical-align:-2.5px;margin-right:3px">';
 let _driveTokenClient = null;
+
+// ===== SINCRONIZAÇÃO VIVA ENTRE DISPOSITIVOS =====
+let _driveSyncTimer = null;   // loop de sincronização (a cada 60s)
+let _drivePrevDB = null;      // último estado salvo (para carimbar o que mudou)
+const DRIVE_SYNC_MS = 60000;  // frequência do sync em segundo plano
+const DRIVE_TOMB_DAYS = 30;    // por quanto tempo lembrar exclusões p/ replicá-las
+const DRIVE_MTIME_KEY = 'drive_last_cloud_mtime';
+const SYNC_TYPES = ['bills', 'credits', 'incomes'];
+
+// Serialização estável (chaves ordenadas) para comparar registros
+function driveCanon(r) { const o = { ...r }; delete o._ts; return JSON.stringify(o, Object.keys(o).sort()); }
+
+// Carimba cada registro novo/alterado com _ts e registra exclusões (tombstones)
+function driveStampChanges() {
+  const now = Date.now();
+  db.deleted = db.deleted || {};
+  let changed = false;
+  for (const t of SYNC_TYPES) {
+    if (!Array.isArray(db.deleted[t])) db.deleted[t] = [];
+    const cur = db[t] || [];
+    const prev = (_drivePrevDB && Array.isArray(_drivePrevDB[t])) ? _drivePrevDB[t] : [];
+    const prevMap = new Map(prev.map(r => [r.id, r]));
+    const curIds = new Set(cur.map(r => r.id));
+    for (const p of prev) {
+      if (!curIds.has(p.id)) { db.deleted[t].push({ id: p.id, ts: now }); changed = true; }
+    }
+    for (const r of cur) {
+      const p = prevMap.get(r.id);
+      if (!p) { r._ts = now; changed = true; continue; }
+      if (driveCanon(p) !== driveCanon(r)) { r._ts = now; changed = true; }
+    }
+  }
+  drivePurgeTombstones();
+  if (changed || !_drivePrevDB) _drivePrevDB = JSON.parse(JSON.stringify(db));
+}
+
+// Expira tombstones antigos e remove duplicados
+function drivePurgeTombstones() {
+  const cutoff = Date.now() - DRIVE_TOMB_DAYS * 86400000;
+  for (const t of SYNC_TYPES) {
+    if (!db.deleted || !Array.isArray(db.deleted[t])) continue;
+    const seen = new Map();
+    for (const tomb of db.deleted[t]) seen.set(tomb.id, Math.max(seen.get(tomb.id) || 0, tomb.ts));
+    db.deleted[t] = [...seen.entries()].filter(([, ts]) => ts > cutoff).map(([id, ts]) => ({ id, ts }));
+  }
+}
+
+// Mescla a nuvem no banco local: união por id, mais recente ganha,
+// exclusões replicadas, pessoas unidas. Retorna null se nada mudou.
+function driveMerge(cloud) {
+  const out = { ...db };
+  let changed = false;
+  for (const t of SYNC_TYPES) {
+    const outMap = new Map((db[t] || []).map(r => [r.id, r]));
+    for (const cr of ((cloud && cloud[t]) || [])) {
+      const lr = outMap.get(cr.id);
+      if (!lr || (cr._ts || 0) > (lr._ts || 0)) { outMap.set(cr.id, cr); changed = true; }
+    }
+    const cloudTombs = ((cloud && cloud.deleted) || {})[t] || [];
+    const localTombs = (db.deleted && db.deleted[t]) || [];
+    for (const tomb of [...localTombs, ...cloudTombs]) {
+      const r = outMap.get(tomb.id);
+      if (r && tomb.ts >= (r._ts || 0)) { outMap.delete(tomb.id); changed = true; }
+    }
+    out[t] = [...outMap.values()];
+  }
+  const people = [...(db.people || [])];
+  for (const p of ((cloud && cloud.people) || [])) if (!people.includes(p)) { people.push(p); changed = true; }
+  out.people = people;
+  out.deleted = {};
+  const cutoff = Date.now() - DRIVE_TOMB_DAYS * 86400000;
+  for (const t of SYNC_TYPES) {
+    const seen = new Map();
+    for (const tomb of [...((db.deleted && db.deleted[t]) || []), ...((((cloud && cloud.deleted) || {})[t]) || [])]) {
+      seen.set(tomb.id, Math.max(seen.get(tomb.id) || 0, tomb.ts));
+    }
+    const alive = new Set(out[t].map(r => r.id));
+    out.deleted[t] = [...seen.entries()].filter(([id, ts]) => !alive.has(id) && ts > cutoff).map(([id, ts]) => ({ id, ts }));
+  }
+  return changed ? out : null;
+}
+
+// Tem algum modal aberto? (não mexemos no banco com formulário na tela)
+function driveModalOpen() {
+  try { return [...document.querySelectorAll('.modal')].some(m => m.offsetParent !== null); }
+  catch(e) { return false; }
+}
+
+// Baixa o último backup da nuvem e MESCLA com o dispositivo. Silencioso.
+async function drivePullCloud() {
+  const token = driveGetToken();
+  if (!token) return false;
+  try {
+    const listRes = await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=10', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (listRes.status === 401) { driveHandleAuthError(); return false; }
+    const listData = await listRes.json();
+    const existing = (listData.files || []).find(f => f.name === DRIVE_BACKUP_NAME);
+    if (!existing) return false;
+    const lastSeen = localStorage.getItem(DRIVE_MTIME_KEY);
+    if (existing.modifiedTime === lastSeen && localStorage.getItem(DRIVE_FILE_ID_KEY) === existing.id) return true; // nuvem inalterada
+    const dlRes = await fetch('https://www.googleapis.com/drive/v3/files/' + existing.id + '?alt=media', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (dlRes.status === 401) { driveHandleAuthError(); return false; }
+    if (!dlRes.ok) return false;
+    const cloud = await dlRes.json();
+    const merged = driveMerge(cloud);
+    localStorage.setItem(DRIVE_MTIME_KEY, existing.modifiedTime);
+    localStorage.setItem(DRIVE_FILE_ID_KEY, existing.id);
+    if (merged) {
+      db = merged;
+      _drivePrevDB = JSON.parse(JSON.stringify(db));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+      renderAll();
+      if (typeof renderPeopleManager === 'function') renderPeopleManager();
+      const badge = document.getElementById('driveStatusBadge');
+      if (badge) badge.innerHTML = DRIVE_IMG + 'Sinc ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      if (_driveSyncTimer) updateBackupWarningVisibility();
+    }
+    return true;
+  } catch(e) {
+    console.error('[DRIVE] Falha na sincronização:', e);
+    return false;
+  }
+}
+
+function driveLiveSyncTick() {
+  if (!driveConnected() || document.hidden) return;
+  if (driveModalOpen()) return; // com modal aberto, espera o próximo ciclo
+  drivePullCloud();
+}
+
+function driveStartSyncTimer() {
+  if (_driveSyncTimer) return;
+  _driveSyncTimer = setInterval(driveLiveSyncTick, DRIVE_SYNC_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(driveLiveSyncTick, 500); });
+}
 let _driveAutoBackupTimer = null;
 
 function initGoogleDrive() {
@@ -3058,17 +3198,12 @@ async function afterConnectFlow() {
   }
 
   localStorage.setItem(DRIVE_FILE_ID_KEY, existing.id);
-  const when = new Date(existing.modifiedTime).toLocaleString('pt-BR');
   if (driveLocalDBEmpty()) {
-    // Dispositivo novo/limpo: restaura AUTOMATICAMENTE o último backup da nuvem
-    // (zero cliques: conectou → os dados simplesmente aparecem)
+    // Dispositivo novo/limpo: carrega o backup da nuvem automaticamente
     await restoreFromDrive(true);
   } else {
-    // Dispositivo com dados + nuvem com dados: único caso que pergunta,
-    // pra nunca apagar dados de ninguém sem querer
-    if (confirm('☁️ Este dispositivo já possui dados, e encontramos um backup de ' + when + ' no seu Google Drive.\n\nOK = Substituir os dados deste dispositivo pelo backup da nuvem\nCancelar = Manter os dados deste dispositivo')) {
-      await restoreFromDrive(true);
-    }
+    // Dispositivo com dados: MESCLA com a nuvem (união por registro, nada se perde)
+    await drivePullCloud();
   }
 }
 
@@ -3175,6 +3310,7 @@ async function driveBackupNow(manual) {
       fileId = created.id;
     }
     localStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
+    localStorage.removeItem(DRIVE_MTIME_KEY); // nosso upload muda a nuvem → re-sync no próximo ciclo
     const badge = document.getElementById('driveStatusBadge');
     if (badge) badge.innerHTML = DRIVE_IMG + 'Salvo ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     if (manual) alert('✅ Backup salvo no seu Google Drive com sucesso!');
@@ -3241,6 +3377,8 @@ function updateDriveUI() {
   const container = document.getElementById('authSection');
   if (!container) return;
   if (driveConnected()) {
+    driveStartSyncTimer(); // sincronização viva entre dispositivos
+
     container.innerHTML = '<span class="sync-badge online" id="driveStatusBadge" title="Backup automático no seu Google Drive">' + DRIVE_IMG + 'Drive ✓</span>';
   } else if (driveTokenExistsButExpired()) {
     container.innerHTML = '<button class="login-btn" onclick="connectGoogleDrive()" title="Sua conexão com o Google Drive expirou — reconectar">' + DRIVE_IMG + 'Reconectar</button>';
