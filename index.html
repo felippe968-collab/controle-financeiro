@@ -816,6 +816,7 @@ td .badge {
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 /* ===== DASHBOARD ===== */
 .dashboard-year-label {
@@ -1099,41 +1100,6 @@ td .badge {
 }
 .backup-warning-banner .warn-dismiss:hover { color: var(--text); }
 
-/* ===== URGENT ATTENTION BANNER (deadline warning) ===== */
-.attn-banner {
-  display: none;
-  background: var(--danger);
-  border: none;
-  border-left: 5px solid var(--danger);
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
-  margin-bottom: 16px;
-  font-size: 0.9rem;
-  align-items: center;
-  gap: 12px;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  line-height: 1.5;
-  animation: attn-pulse 2s ease-in-out infinite;
-}
-.attn-banner.visible { display: flex; }
-@keyframes attn-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
-}
-.attn-banner .warn-text { flex: 1; min-width: 200px; color: #fff; font-weight: 500; }
-.attn-banner .warn-text strong { color: #fff; text-transform: uppercase; }
-.attn-banner .warn-actions { display: flex; gap: 8px; align-items: center; }
-.attn-banner .btn-attn {
-  background: #fff; color: var(--danger); border: none; border-radius: var(--radius-sm);
-  padding: 8px 14px; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap;
-}
-.attn-banner .btn-attn:hover { opacity: 0.9; }
-.attn-banner .warn-dismiss {
-  background: none; border: none; color: rgba(255,255,255,0.8);
-  font-size: 1.1rem; cursor: pointer; padding: 4px 8px;
-}
-.attn-banner .warn-dismiss:hover { color: #fff; }
 @media (max-width: 640px) {
   .profile-name { display: none; }
   .login-btn span { display: none; }
@@ -1178,17 +1144,6 @@ td .badge {
 <div class="migrate-banner" id="migrateBanner">
   <span>📥 Você tem dados salvos localmente. Deseja enviá-los para sua conta na nuvem?</span>
   <button class="btn btn-sm" onclick="migrateLocalToCloud()">Migrar Agora</button>
-</div>
-
-<!-- URGENT: deadline backup warning (auto-expires 15/09/2026) -->
-<div class="attn-banner" id="attnBanner">
-  <div class="warn-text">
-    🚨 <strong>Atenção:</strong> o app passará por uma atualização importante em <strong>15/09/2026</strong>. Salve seus dados em JSON antes dessa data para não perder nada! (📦 Dados → Exportar)
-  </div>
-  <div class="warn-actions">
-    <button class="btn-attn" onclick="exportLocalJSON()" style="white-space:nowrap">⬇️ Salvar Backup Agora</button>
-    <button class="warn-dismiss" onclick="dismissAttnBanner()" title="Fechar">✕</button>
-  </div>
 </div>
 
 <!-- Local mode backup warning banner -->
@@ -1521,6 +1476,7 @@ td .badge {
 <div class="modal-overlay" id="dataModal">
   <div class="modal" style="max-width:480px">
     <h2>📦 Gerenciar Dados</h2>
+    <div id="driveSection" style="margin-bottom:16px"></div>
     <div style="margin-bottom:16px">
       <button class="settings-action-btn" onclick="exportLocalJSON()" style="display:flex;align-items:center;gap:8px;width:100%;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:.9rem;cursor:pointer;margin-bottom:8px">
         <span style="font-size:1.2rem">⬇️</span> Exportar Dados (arquivo .json)
@@ -1593,6 +1549,7 @@ function loadDB() {
 function saveDB() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
   syncPeopleToSupabase();
+  scheduleDriveBackup(); // backup automático no Drive do usuário (se conectado)
 }
 
 let _peopleSyncTimer = null;
@@ -2975,6 +2932,15 @@ function renderDashboard() {
 
 
 // ===== SUPABASE CONFIG =====
+// ===== GOOGLE DRIVE (backup na conta do PRÓPRIO usuário) =====
+// ⚠️ PREENCHER com o Client ID do Google Cloud do dono do app.
+// Enquanto vazio, o botão de conectar avisa que o recurso chega em breve.
+const GOOGLE_CLIENT_ID = '';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const DRIVE_TOKEN_KEY = 'gdrive_token';
+const DRIVE_FILE_ID_KEY = 'gdrive_file_id';
+const DRIVE_BACKUP_NAME = 'controle-financeiro-backup.json';
+
 const SUPABASE_URL = 'https://dahqnvjyufwcqkuiubjs.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhaHFudmp5dWZ3Y3FrdWl1YmpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1ODA5NTMsImV4cCI6MjEwMjE1Njk1M30.bBYQ9aNqQVU29ooTbGFGh3s-L3ztg_4j9EGOeIY_sYU';
 let supabaseClient = null;
@@ -3038,6 +3004,230 @@ function toggleTheme() {
     });
   }
 }
+// ================== MÓDULO GOOGLE DRIVE ==================
+let _driveTokenClient = null;
+let _driveAutoBackupTimer = null;
+
+function initGoogleDrive() {
+  if (!GOOGLE_CLIENT_ID) return; // aguardando configuração do dono
+  if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+    // GIS ainda carregando (script async) — tenta de novo em 1s
+    setTimeout(initGoogleDrive, 1000);
+    return;
+  }
+  _driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (resp) => {
+      if (resp.error) {
+        alert('❌ Não foi possível conectar ao Google Drive: ' + resp.error);
+        return;
+      }
+      const expiresIn = parseInt(resp.expires_in || '3600', 10);
+      localStorage.setItem(DRIVE_TOKEN_KEY, JSON.stringify({
+        token: resp.access_token,
+        expires_at: Date.now() + (expiresIn - 60) * 1000
+      }));
+      updateDriveUI();
+      updateBackupWarningVisibility();
+      alert('✅ Google Drive conectado! Seus dados serão salvos automaticamente na SUA conta Google.');
+      driveBackupNow(true); // primeira sincronização imediata
+    }
+  });
+}
+
+function driveGetToken() {
+  try {
+    const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
+    if (!raw) return null;
+    const t = JSON.parse(raw);
+    if (Date.now() >= t.expires_at) return null; // expirado
+    return t.token;
+  } catch(e) { return null; }
+}
+
+function driveTokenExistsButExpired() {
+  try {
+    const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
+    if (!raw) return false;
+    const t = JSON.parse(raw);
+    return Date.now() >= t.expires_at;
+  } catch(e) { return false; }
+}
+
+function driveConnected() { return !!driveGetToken(); }
+
+function connectGoogleDrive() {
+  if (!GOOGLE_CLIENT_ID) {
+    alert('☁️ O backup no Google Drive chega em breve! Por enquanto, use 📦 Dados → Exportar para salvar seu backup em JSON.');
+    return;
+  }
+  if (typeof google === 'undefined' || !_driveTokenClient) {
+    alert('⚠️ Aguarde alguns segundos e tente novamente (carregando Google Drive)...');
+    return;
+  }
+  _driveTokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function disconnectGoogleDrive() {
+  if (!confirm('Desconectar do Google Drive? Seus dados continuam salvos neste dispositivo.')) return;
+  try {
+    const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
+    if (raw && google && google.accounts) {
+      google.accounts.oauth2.revoke(JSON.parse(raw).token, () => {});
+    }
+  } catch(e) {}
+  localStorage.removeItem(DRIVE_TOKEN_KEY);
+  localStorage.removeItem(DRIVE_FILE_ID_KEY);
+  updateDriveUI();
+  updateBackupWarningVisibility();
+  renderDriveSection();
+}
+
+// Backup automático: agendado a cada mudança, dispara após 5s de inatividade
+function scheduleDriveBackup() {
+  if (!driveConnected()) return;
+  if (_driveAutoBackupTimer) clearTimeout(_driveAutoBackupTimer);
+  _driveAutoBackupTimer = setTimeout(() => driveBackupNow(false), 5000);
+}
+
+async function driveBackupNow(manual) {
+  const token = driveGetToken();
+  if (!token) return;
+  try {
+    const json = JSON.stringify(db, null, 2);
+    let fileId = localStorage.getItem(DRIVE_FILE_ID_KEY);
+
+    if (!fileId) {
+      // Procura backup existente na pasta privada do app
+      const listRes = await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=10', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (listRes.status === 401) { driveHandleAuthError(); return; }
+      const listData = await listRes.json();
+      const existing = (listData.files || []).find(f => f.name === DRIVE_BACKUP_NAME);
+      fileId = existing ? existing.id : null;
+    }
+
+    if (fileId) {
+      // Atualiza o arquivo existente
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=media', {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: json
+      });
+      if (res.status === 401) { driveHandleAuthError(); return; }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+    } else {
+      // Cria o primeiro backup (pasta privada — o usuário não vê no Drive dele)
+      const boundary = 'backup' + Date.now();
+      const meta = JSON.stringify({ name: DRIVE_BACKUP_NAME, parents: ['appDataFolder'], mimeType: 'application/json' });
+      const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta +
+                   '\r\n--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + json + '\r\n--' + boundary + '--';
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary=' + boundary },
+        body: body
+      });
+      if (res.status === 401) { driveHandleAuthError(); return; }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const created = await res.json();
+      fileId = created.id;
+    }
+    localStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
+    const badge = document.getElementById('driveStatusBadge');
+    if (badge) badge.textContent = '☁️ Salvo ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (manual) alert('✅ Backup salvo no seu Google Drive com sucesso!');
+  } catch(e) {
+    console.error('[DRIVE] Backup falhou:', e);
+    if (manual) alert('❌ Falha ao salvar no Google Drive: ' + e.message);
+  }
+}
+
+function driveHandleAuthError() {
+  localStorage.removeItem(DRIVE_TOKEN_KEY);
+  localStorage.removeItem(DRIVE_FILE_ID_KEY);
+  updateDriveUI();
+  updateBackupWarningVisibility();
+  renderDriveSection();
+}
+
+async function restoreFromDrive() {
+  const token = driveGetToken();
+  if (!token) {
+    alert('Conecte seu Google Drive primeiro.');
+    connectGoogleDrive();
+    return;
+  }
+  try {
+    const listRes = await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=10', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (listRes.status === 401) { driveHandleAuthError(); alert('Sua conexão expirou. Conecte novamente e tente restaurar.'); return; }
+    const listData = await listRes.json();
+    const existing = (listData.files || []).find(f => f.name === DRIVE_BACKUP_NAME);
+    if (!existing) { alert('Nenhum backup encontrado no seu Google Drive.'); return; }
+    const when = new Date(existing.modifiedTime).toLocaleString('pt-BR');
+    if (!confirm('Encontramos um backup do seu Google Drive salvo em ' + when + '.\n\nRestaurar? Isso vai SUBSTITUIR os dados atuais deste dispositivo.')) return;
+
+    const dlRes = await fetch('https://www.googleapis.com/drive/v3/files/' + existing.id + '?alt=media', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!dlRes.ok) throw new Error('HTTP ' + dlRes.status);
+    const data = await dlRes.json();
+
+    _lastImportAt = Date.now(); // proteção contra sobrescrita
+    db = { ...db, ...data };
+    if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Titular'];
+    saveDB();
+    renderAll();
+    renderPeopleManager();
+    localStorage.setItem(DRIVE_FILE_ID_KEY, existing.id);
+    alert('✅ Dados restaurados do Google Drive com sucesso!');
+  } catch(e) {
+    alert('❌ Falha ao restaurar do Drive: ' + e.message);
+  }
+}
+
+// UI do header: botão conectar / badge conectado
+function updateDriveUI() {
+  const container = document.getElementById('authSection');
+  if (!container) return;
+  if (driveConnected()) {
+    container.innerHTML = '<span class="sync-badge online" id="driveStatusBadge" title="Backup automático no seu Google Drive">☁️ Drive ✓</span>';
+  } else if (driveTokenExistsButExpired()) {
+    container.innerHTML = '<button class="login-btn" onclick="connectGoogleDrive()" title="Sua conexão com o Google Drive expirou — reconectar">☁️ Reconectar</button>';
+  } else {
+    container.innerHTML = '<button class="login-btn" onclick="connectGoogleDrive()" title="Conectar sua conta Google para backup automático na nuvem">☁️ Entrar</button>';
+  }
+  renderDriveSection();
+}
+
+function renderDriveSection() {
+  const el = document.getElementById('driveSection');
+  if (!el) return;
+  const connected = driveConnected();
+  const expired = !connected && driveTokenExistsButExpired();
+  let html = '';
+  if (connected) {
+    html = '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.82rem;line-height:1.5;margin-bottom:8px">☁️ <strong>Google Drive conectado.</strong> Backup automático a cada alteração, na SUA conta Google (pasta privada).</div>';
+  } else if (expired) {
+    html = '<div style="padding:10px;background:var(--bg);border:1px solid var(--warning);border-radius:var(--radius-sm);font-size:.82rem;line-height:1.5;margin-bottom:8px">⚠️ Sua conexão com o Google Drive expirou. Reconecte para continuar com backup automático.</div>';
+  } else {
+    html = '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.82rem;line-height:1.5;margin-bottom:8px">☁️ Conecte sua conta Google para backup automático na nuvem — os dados ficam na SUA conta, em uma pasta privada.</div>';
+  }
+  html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
+  if (!connected) {
+    html += '<button class="btn btn-sm" onclick="connectGoogleDrive()">☁️ ' + (expired ? 'Reconectar' : 'Conectar Google Drive') + '</button>';
+  } else {
+    html += '<button class="btn btn-sm" onclick="driveBackupNow(true)">☁️ Salvar no Drive agora</button>';
+    html += '<button class="btn btn-sm" onclick="disconnectGoogleDrive()">Desconectar</button>';
+  }
+  html += '<button class="btn btn-sm btn-ghost" onclick="restoreFromDrive()">Restaurar do Drive</button>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
 let isOnlineMode = false;
 
 function initSupabase() {
@@ -3611,6 +3801,7 @@ function setupPWA() {
 
 // ===== DATA MANAGEMENT =====
 function openDataModal() {
+  renderDriveSection();
   openModal('dataModal');
 }
 
@@ -3720,33 +3911,14 @@ function renderAll() {
   renderDashboard();
 }
 
-// ===== URGENT DEADLINE BANNER (auto-expira em 15/09/2026) =====
-let _attnDismissedThisSession = false;
-
-function updateAttnBannerVisibility() {
-  const banner = document.getElementById('attnBanner');
-  if (!banner) return;
-  const deadline = new Date('2026-09-15T00:00:00').getTime();
-  if (Date.now() >= deadline || _attnDismissedThisSession) {
-    banner.classList.remove('visible');
-  } else {
-    banner.classList.add('visible');
-  }
-}
-
-function dismissAttnBanner() {
-  _attnDismissedThisSession = true; // some até fechar o app; volta na próxima visita
-  updateAttnBannerVisibility();
-}
-
 // ===== LOCAL BACKUP WARNING (guest mode) =====
 const BACKUP_WARN_KEY = 'backup_warning_dismissed';
 
 function updateBackupWarningVisibility() {
   const banner = document.getElementById('backupWarningBanner');
   if (!banner) return;
-  // Only warn users who are NOT synced to the cloud
-  if (currentUser) {
+  // Some quando há backup online ativo: conta Google (Drive) ou conta no servidor
+  if (driveConnected() || currentUser) {
     banner.classList.remove('visible');
     return;
   }
@@ -3766,14 +3938,14 @@ function dismissBackupWarning() {
 
 // ===== INIT =====
 loadDB();
-updateAttnBannerVisibility();
 updateBackupWarningVisibility();
 applyTheme(localStorage.getItem('theme_pref_guest') || 'dark');
 initPeriodSelector();
 renderAll();
 setupPWA();
-// Login OPCIONAL: app salva sempre no localStorage; logado, sincroniza no Supabase
-initSupabase();
+// Backup online: Google Drive do PRÓPRIO usuário (Supabase desativado — código mantido)
+updateDriveUI();
+initGoogleDrive();
 
 // Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(o => {
