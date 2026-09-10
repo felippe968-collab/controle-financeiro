@@ -3272,7 +3272,6 @@ async function driveBackupNow(manual) {
   const token = driveGetToken();
   if (!token) return;
   try {
-    const json = JSON.stringify(db, null, 2);
     let fileId = localStorage.getItem(DRIVE_FILE_ID_KEY);
 
     if (!fileId) {
@@ -3287,6 +3286,24 @@ async function driveBackupNow(manual) {
     }
 
     if (fileId) {
+      // MESCLA antes de sobrescrever: nada que outro dispositivo enviou é perdido
+      try {
+        const preRes = await fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media', {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (preRes.status === 401) { driveHandleAuthError(); return; }
+        if (preRes.ok) {
+          const cloud = await preRes.json();
+          const merged = driveMerge(cloud);
+          if (merged) {
+            db = merged;
+            _drivePrevDB = JSON.parse(JSON.stringify(db));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+          }
+        }
+      } catch(e) { console.warn('[DRIVE] Merge pré-upload falhou, seguindo com backup local:', e); }
+
+      const json = JSON.stringify(db, null, 2);
       // Atualiza o arquivo existente
       const res = await fetch('https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=media', {
         method: 'PATCH',
@@ -3297,6 +3314,7 @@ async function driveBackupNow(manual) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
     } else {
       // Cria o primeiro backup (pasta privada — o usuário não vê no Drive dele)
+      const json = JSON.stringify(db, null, 2);
       const boundary = 'backup' + Date.now();
       const meta = JSON.stringify({ name: DRIVE_BACKUP_NAME, parents: ['appDataFolder'], mimeType: 'application/json' });
       const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta +
@@ -3364,10 +3382,12 @@ async function restoreFromDrive(skipConfirm) {
     _lastImportAt = Date.now(); // proteção contra sobrescrita
     db = { ...db, ...data };
     if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Titular'];
+    if (typeof _drivePrevDB !== 'undefined') _drivePrevDB = JSON.parse(JSON.stringify(db)); // baseline: os carimbos da NUVEM são preservados, nada é re-carimbado como novidade local
     saveDB();
     renderAll();
     renderPeopleManager();
     localStorage.setItem(DRIVE_FILE_ID_KEY, existing.id);
+    localStorage.removeItem(DRIVE_MTIME_KEY); // próxima checagem confirma a restauração
     alert('✅ Dados restaurados do Google Drive com sucesso!');
   } catch(e) {
     alert('❌ Falha ao restaurar do Drive: ' + e.message);
@@ -4015,6 +4035,7 @@ function importLocalJSON(event) {
       if (confirm('Importar dados? Isso vai SUBSTITUIR os dados atuais.' + (currentUser ? '\n\nComo você está logado, os dados da NUVEM também serão substituídos.' : ''))) {
         db = { ...db, ...data };
         if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Titular'];
+        if (typeof _drivePrevDB !== 'undefined') _drivePrevDB = JSON.parse(JSON.stringify(db)); // baseline: import não gera carimbos falsos
 
         _lastImportAt = Date.now(); // marca a importação: carga da nuvem atrasada será ignorada
         saveDB();
