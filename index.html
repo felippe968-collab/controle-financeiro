@@ -1493,6 +1493,7 @@ td .badge {
       💡 Seus dados são salvos automaticamente no navegador (LocalStorage). Use "Exportar" para criar um backup em arquivo, e "Importar" para restaurar.<br><br>
       ⚠️ <strong style="color:var(--warning)">Sem login, os dados existem apenas neste dispositivo.</strong> Faça backup em JSON regularmente. <strong style="color:var(--warning)">Não nos responsabilizamos</strong> por perda de dados ou mau uso decorrentes da falta de backup.
     </div>
+    <div style="text-align:center;font-size:.75rem;color:var(--text-muted);margin-top:12px">Versão <span id="appVersionLabel">—</span></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('dataModal')" style="flex:1">Fechar</button>
     </div>
@@ -1516,6 +1517,7 @@ td .badge {
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function getTitular() { return db.people[0] || 'Titular'; }
 const STORAGE_KEY = 'finance_control_data_v2';
+const APP_VERSION = 'v1.7.4'; // mostrar no modal Dados — conferir se o dispositivo rodou o update
 
 let _now = new Date();
 let currentMonth = _now.getMonth() + 1 > 11 ? 0 : _now.getMonth() + 1;
@@ -4160,6 +4162,9 @@ function dismissBackupWarning() {
 }
 
 // ===== INIT =====
+console.log('Controle Financeiro ' + APP_VERSION);
+const _vLabel = document.getElementById('appVersionLabel');
+if (_vLabel) _vLabel.textContent = APP_VERSION;
 loadDB();
 updateBackupWarningVisibility();
 applyTheme(localStorage.getItem('theme_pref_guest') || 'dark');
