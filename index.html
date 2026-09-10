@@ -2925,7 +2925,7 @@ function getCurrentTheme() {
 function loadTheme() {
   // Priority: Supabase user_metadata > localStorage > dark (default)
   let theme = null;
-  if (currentUser && currentUser.user_metadata && currentUser.user_metadata.theme) {
+  if (currentUser && supabaseClient && currentUser.user_metadata && currentUser.user_metadata.theme) {
     theme = currentUser.user_metadata.theme;
   }
   if (!theme) {
@@ -3003,7 +3003,8 @@ function initSupabase() {
 let isSignUpMode = false;
 
 function showAuthModal() {
-  if (!supabaseClient) { setTimeout(showAuthModal, 500); return; }
+  // Login desativado — modal só abre se a sincronização for reativada manualmente
+  if (!supabaseClient) return;
   document.getElementById('authModalOverlay').classList.add('active');
   document.getElementById('appContent').classList.add('app-blurred');
   document.getElementById('authEmail').focus();
@@ -3251,8 +3252,7 @@ function updateAuthUI() {
     container.innerHTML = '';
     const syncBadge = document.getElementById('syncBadge');
     if (syncBadge) syncBadge.innerHTML = '<span class="sync-badge offline">Local</span>';
-    // Show the login gate automatically
-    showAuthModal();
+    // Login desativado — app roda 100% local (localStorage)
   }
 }
 
@@ -3597,7 +3597,9 @@ applyTheme(localStorage.getItem('theme_pref_guest') || 'dark');
 initPeriodSelector();
 renderAll();
 setupPWA();
-initSupabase();
+// Login/nuvem desativado a pedido do usuário — dados ficam apenas no localStorage.
+// Para reativar a sincronização via Supabase no futuro, descomente a linha abaixo:
+// initSupabase();
 
 // Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(o => {
