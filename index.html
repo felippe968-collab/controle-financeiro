@@ -3012,7 +3012,7 @@ let _driveTokenClient = null;
 // ===== SINCRONIZAÇÃO VIVA ENTRE DISPOSITIVOS =====
 let _driveSyncTimer = null;   // loop de sincronização (a cada 60s)
 let _drivePrevDB = null;      // último estado salvo (para carimbar o que mudou)
-const DRIVE_SYNC_MS = 60000;  // frequência do sync em segundo plano
+const DRIVE_SYNC_MS = 10000;  // frequência do sync em segundo plano (10s)
 const DRIVE_TOMB_DAYS = 30;    // por quanto tempo lembrar exclusões p/ replicá-las
 const DRIVE_MTIME_KEY = 'drive_last_cloud_mtime';
 const SYNC_TYPES = ['bills', 'credits', 'incomes'];
@@ -3265,7 +3265,7 @@ function disconnectGoogleDrive() {
 function scheduleDriveBackup() {
   if (!driveConnected()) return;
   if (_driveAutoBackupTimer) clearTimeout(_driveAutoBackupTimer);
-  _driveAutoBackupTimer = setTimeout(() => driveBackupNow(false), 5000);
+  _driveAutoBackupTimer = setTimeout(() => driveBackupNow(false), 3000);
 }
 
 async function driveBackupNow(manual) {
