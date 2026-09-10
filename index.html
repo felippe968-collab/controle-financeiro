@@ -801,6 +801,7 @@ td .badge {
     <button class="auth-submit" id="authSubmitBtn" onclick="handleAuth()">Entrar</button>
     <button class="auth-toggle" onclick="toggleAuthMode()" id="authToggleBtn">Não tem conta? Criar agora</button>
     <button class="auth-toggle" id="forgotPasswordBtn" onclick="showForgotPassword()" style="margin-top:8px">Esqueci a senha</button>
+    <button class="auth-toggle" onclick="hideAuthModal()" style="margin-top:12px;color:var(--text-muted)">Continuar sem login (só local)</button>
   </div>
   <!-- Password Reset Form (shown when recovering) -->
   <div class="auth-modal" id="resetPasswordForm" style="display:none">
@@ -3003,7 +3004,6 @@ function initSupabase() {
 let isSignUpMode = false;
 
 function showAuthModal() {
-  // Login desativado — modal só abre se a sincronização for reativada manualmente
   if (!supabaseClient) return;
   document.getElementById('authModalOverlay').classList.add('active');
   document.getElementById('appContent').classList.add('app-blurred');
@@ -3249,10 +3249,10 @@ function updateAuthUI() {
     const syncBadge = document.getElementById('syncBadge');
     if (syncBadge) syncBadge.innerHTML = '<span class="sync-badge online">Sincronizado</span>';
   } else {
-    container.innerHTML = '';
+    // Login opcional: botão para quem quiser sincronizar na nuvem
+    container.innerHTML = '<button class="login-btn" onclick="showAuthModal()" title="Entrar para sincronizar seus dados na nuvem (opcional)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span>Entrar</span></button>';
     const syncBadge = document.getElementById('syncBadge');
     if (syncBadge) syncBadge.innerHTML = '<span class="sync-badge offline">Local</span>';
-    // Login desativado — app roda 100% local (localStorage)
   }
 }
 
@@ -3286,6 +3286,7 @@ async function loadDataFromSupabase() {
       }
     }
 
+    saveDB(); // mantém o localStorage espelhando os dados da nuvem
     renderAll();
   } catch(e) {
     console.error('Erro ao carregar do Supabase:', e);
@@ -3597,9 +3598,8 @@ applyTheme(localStorage.getItem('theme_pref_guest') || 'dark');
 initPeriodSelector();
 renderAll();
 setupPWA();
-// Login/nuvem desativado a pedido do usuário — dados ficam apenas no localStorage.
-// Para reativar a sincronização via Supabase no futuro, descomente a linha abaixo:
-// initSupabase();
+// Login OPCIONAL: app salva sempre no localStorage; logado, sincroniza no Supabase
+initSupabase();
 
 // Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(o => {
