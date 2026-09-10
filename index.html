@@ -1098,6 +1098,42 @@ td .badge {
   font-size: 1.1rem; cursor: pointer; padding: 4px 8px;
 }
 .backup-warning-banner .warn-dismiss:hover { color: var(--text); }
+
+/* ===== URGENT ATTENTION BANNER (deadline warning) ===== */
+.attn-banner {
+  display: none;
+  background: var(--danger);
+  border: none;
+  border-left: 5px solid var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  line-height: 1.5;
+  animation: attn-pulse 2s ease-in-out infinite;
+}
+.attn-banner.visible { display: flex; }
+@keyframes attn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+.attn-banner .warn-text { flex: 1; min-width: 200px; color: #fff; font-weight: 500; }
+.attn-banner .warn-text strong { color: #fff; text-transform: uppercase; }
+.attn-banner .warn-actions { display: flex; gap: 8px; align-items: center; }
+.attn-banner .btn-attn {
+  background: #fff; color: var(--danger); border: none; border-radius: var(--radius-sm);
+  padding: 8px 14px; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.attn-banner .btn-attn:hover { opacity: 0.9; }
+.attn-banner .warn-dismiss {
+  background: none; border: none; color: rgba(255,255,255,0.8);
+  font-size: 1.1rem; cursor: pointer; padding: 4px 8px;
+}
+.attn-banner .warn-dismiss:hover { color: #fff; }
 @media (max-width: 640px) {
   .profile-name { display: none; }
   .login-btn span { display: none; }
@@ -1142,6 +1178,17 @@ td .badge {
 <div class="migrate-banner" id="migrateBanner">
   <span>📥 Você tem dados salvos localmente. Deseja enviá-los para sua conta na nuvem?</span>
   <button class="btn btn-sm" onclick="migrateLocalToCloud()">Migrar Agora</button>
+</div>
+
+<!-- URGENT: deadline backup warning (auto-expires 15/09/2026) -->
+<div class="attn-banner" id="attnBanner">
+  <div class="warn-text">
+    🚨 <strong>Atenção:</strong> o app passará por uma atualização importante em <strong>15/09/2026</strong>. Salve seus dados em JSON antes dessa data para não perder nada! (📦 Dados → Exportar)
+  </div>
+  <div class="warn-actions">
+    <button class="btn-attn" onclick="exportLocalJSON()" style="white-space:nowrap">⬇️ Salvar Backup Agora</button>
+    <button class="warn-dismiss" onclick="dismissAttnBanner()" title="Fechar">✕</button>
+  </div>
 </div>
 
 <!-- Local mode backup warning banner -->
@@ -3673,6 +3720,25 @@ function renderAll() {
   renderDashboard();
 }
 
+// ===== URGENT DEADLINE BANNER (auto-expira em 15/09/2026) =====
+let _attnDismissedThisSession = false;
+
+function updateAttnBannerVisibility() {
+  const banner = document.getElementById('attnBanner');
+  if (!banner) return;
+  const deadline = new Date('2026-09-15T00:00:00').getTime();
+  if (Date.now() >= deadline || _attnDismissedThisSession) {
+    banner.classList.remove('visible');
+  } else {
+    banner.classList.add('visible');
+  }
+}
+
+function dismissAttnBanner() {
+  _attnDismissedThisSession = true; // some até fechar o app; volta na próxima visita
+  updateAttnBannerVisibility();
+}
+
 // ===== LOCAL BACKUP WARNING (guest mode) =====
 const BACKUP_WARN_KEY = 'backup_warning_dismissed';
 
@@ -3700,6 +3766,7 @@ function dismissBackupWarning() {
 
 // ===== INIT =====
 loadDB();
+updateAttnBannerVisibility();
 updateBackupWarningVisibility();
 applyTheme(localStorage.getItem('theme_pref_guest') || 'dark');
 initPeriodSelector();
