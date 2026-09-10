@@ -3021,7 +3021,11 @@ function initSupabase() {
       isOnlineMode = true;
       updateAuthUI();
       loadTheme(); // apply this user's saved theme preference
-      loadDataFromSupabase();
+      // Só carrega da nuvem em login/sessão restaurada — TOKEN_REFRESHED
+      // NÃO pode sobrescrever alterações locais (bug do "volta sozinho")
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        loadDataFromSupabase();
+      }
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       isOnlineMode = false;
@@ -3296,6 +3300,7 @@ function updateAuthUI() {
 
 // ===== LOAD DATA FROM SUPABASE =====
 async function loadDataFromSupabase() {
+  const loadStartedAt = Date.now();
   try {
     const [billsRes, creditsRes, incomesRes] = await Promise.all([
       supabaseClient.from('bills').select('data'),
@@ -3303,6 +3308,12 @@ async function loadDataFromSupabase() {
       supabaseClient.from('incomes').select('data')
     ]);
 
+    // Se o usuário importou um JSON DEPOIS que esta carga começou (rede lenta),
+    // os dados da nuvem estão desatualizados — NÃO sobrescrever a importação
+    if (_lastImportAt > loadStartedAt) {
+      console.log('[SYNC] Carga da nuvem ignorada: importação mais recente');
+      return;
+    }
     db.bills = (billsRes.data || []).map(r => r.data);
     db.credits = (creditsRes.data || []).map(r => r.data);
     db.incomes = (incomesRes.data || []).map(r => r.data);
@@ -3567,6 +3578,8 @@ function exportLocalJSON() {
   URL.revokeObjectURL(url);
 }
 
+let _lastImportAt = 0; // protege contra carregamento da nuvem chegando atrasado
+
 function importLocalJSON(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -3574,18 +3587,47 @@ function importLocalJSON(event) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      if (confirm('Importar dados? Isso vai SUBSTITUIR os dados atuais.')) {
+      if (confirm('Importar dados? Isso vai SUBSTITUIR os dados atuais.' + (currentUser ? '\n\nComo você está logado, os dados da NUVEM também serão substituídos.' : ''))) {
         db = { ...db, ...data };
         if (!db.people || !Array.isArray(db.people) || db.people.length === 0) db.people = ['Titular'];
-        
+
+        _lastImportAt = Date.now(); // marca a importação: carga da nuvem atrasada será ignorada
         saveDB();
         renderAll();
         renderPeopleManager();
-        alert('✅ Dados importados com sucesso!');
+        if (currentUser && supabaseClient) {
+          alert('✅ Dados importados! Sincronizando com a nuvem...');
+          syncImportToCloud();
+        } else {
+          alert('✅ Dados importados com sucesso!');
+        }
       }
     } catch(err) { alert('❌ Arquivo inválido!'); }
+    event.target.value = ''; // permite reimportar o mesmo arquivo
   };
   reader.readAsText(file);
+}
+
+// Substitui TODOS os dados da nuvem pelos recém-importados
+async function syncImportToCloud() {
+  if (!currentUser || !supabaseClient) return;
+  try {
+    // 1. Apaga tudo do usuário na nuvem
+    await Promise.all([
+      supabaseClient.from('bills').delete().eq('user_id', currentUser.id),
+      supabaseClient.from('credits').delete().eq('user_id', currentUser.id),
+      supabaseClient.from('incomes').delete().eq('user_id', currentUser.id)
+    ]);
+    // 2. Sobe os dados importados
+    const ops = [];
+    if (db.bills && db.bills.length) ops.push(supabaseClient.from('bills').upsert(db.bills.map(b => ({ id: b.id, user_id: currentUser.id, data: b }))));
+    if (db.credits && db.credits.length) ops.push(supabaseClient.from('credits').upsert(db.credits.map(c => ({ id: c.id, user_id: currentUser.id, data: c }))));
+    if (db.incomes && db.incomes.length) ops.push(supabaseClient.from('incomes').upsert(db.incomes.map(i => ({ id: i.id, user_id: currentUser.id, data: i }))));
+    await Promise.all(ops);
+    alert('✅ Nuvem atualizada com os dados importados!');
+  } catch(e) {
+    alert('⚠️ Dados importados localmente, mas a sincronização com a nuvem falhou: ' + e.message + '\nUse 📦 Dados → Exportar para garantir o backup.');
+  }
 }
 
 async function clearAllData() {
@@ -3593,6 +3635,7 @@ async function clearAllData() {
   if (!confirm('Tem certeza absoluta? Todos os gastos, contas, cartão e ganhos serão perdidos!')) return;
 
   // 1. Clear local storage
+  _lastImportAt = Date.now(); // impede que uma carga da nuvem atrasada "traga os dados de volta"
   db = { bills: [], credits: [], incomes: [], people: ['Titular'] };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
 
