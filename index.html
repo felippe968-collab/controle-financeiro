@@ -1517,7 +1517,7 @@ td .badge {
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function getTitular() { return db.people[0] || 'Titular'; }
 const STORAGE_KEY = 'finance_control_data_v2';
-const APP_VERSION = 'v1.7.4'; // mostrar no modal Dados — conferir se o dispositivo rodou o update
+const APP_VERSION = 'v1.7.5'; // mostrar no modal Dados — conferir se o dispositivo rodou o update
 
 let _now = new Date();
 let currentMonth = _now.getMonth() + 1 > 11 ? 0 : _now.getMonth() + 1;
@@ -3010,6 +3010,15 @@ function toggleTheme() {
 // ================== MÓDULO GOOGLE DRIVE ==================
 const DRIVE_IMG = '<img src="drive-icon.png" alt="Drive" style="height:15px;width:14px;vertical-align:-2.5px;margin-right:3px">';
 let _driveTokenClient = null;
+let _driveRenewOnTap = false;  // renova o token no próximo toque do usuário (o gesto libera o popup)
+let _driveSilentRenew = false; // renovação em andamento: falha não gera alerta
+
+// Renova o token em silêncio — sem tela de consentimento, popup fecha sozinho
+function driveSilentRenew() {
+  if (typeof google === 'undefined' || !_driveTokenClient) return;
+  _driveSilentRenew = true;
+  try { _driveTokenClient.requestAccessToken({ prompt: '' }); } catch(e) { _driveSilentRenew = false; }
+}
 
 // ===== SINCRONIZAÇÃO VIVA ENTRE DISPOSITIVOS =====
 let _driveSyncTimer = null;   // loop de sincronização (a cada 60s)
@@ -3154,7 +3163,8 @@ async function drivePullCloud() {
 }
 
 function driveLiveSyncTick() {
-  if (!driveConnected() || document.hidden) return;
+  if (!driveConnected()) { if (driveTokenExistsButExpired()) updateDriveUI(); return; }
+  if (document.hidden) return;
   if (driveModalOpen()) return; // com modal aberto, espera o próximo ciclo
   drivePullCloud();
 }
@@ -3179,8 +3189,11 @@ function initGoogleDrive() {
     client_id: GOOGLE_CLIENT_ID,
     scope: DRIVE_SCOPE,
     callback: (resp) => {
+      const wasSilent = _driveSilentRenew;
+      _driveSilentRenew = false;
       if (resp.error) {
-        alert('❌ Não foi possível conectar ao Google Drive: ' + resp.error);
+        if (!wasSilent) alert('❌ Não foi possível conectar ao Google Drive: ' + resp.error);
+        updateDriveUI(); // reconexão silenciosa falhou → mostra botão Reconectar
         return;
       }
       const expiresIn = parseInt(resp.expires_in || '3600', 10);
@@ -3191,6 +3204,12 @@ function initGoogleDrive() {
       updateDriveUI();
       updateBackupWarningVisibility();
       afterConnectFlow(); // NUNCA sobrescreve a nuvem às cegas
+    },
+    error_callback: (err) => {
+      const wasSilent = _driveSilentRenew;
+      _driveSilentRenew = false;
+      if (!wasSilent) alert('❌ Conexão com o Google falhou: ' + (err && err.type ? err.type : 'erro') + '. Tente novamente.');
+      updateDriveUI();
     }
   });
 }
@@ -3235,7 +3254,9 @@ function driveGetToken() {
     const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
     if (!raw) return null;
     const t = JSON.parse(raw);
-    if (Date.now() >= t.expires_at) return null; // expirado
+    const msLeft = t.expires_at - Date.now();
+    if (msLeft <= 0) { _driveRenewOnTap = true; return null; } // expirado: renova no próximo toque
+    if (msLeft < 5 * 60 * 1000) _driveRenewOnTap = true; // renova ANTES de expirar
     return t.token;
   } catch(e) { return null; }
 }
@@ -3260,7 +3281,9 @@ function connectGoogleDrive() {
     alert('⚠️ Aguarde alguns segundos e tente novamente (carregando Google Drive)...');
     return;
   }
-  _driveTokenClient.requestAccessToken({ prompt: 'consent' });
+  const jaConectado = !!(localStorage.getItem(DRIVE_TOKEN_KEY) || localStorage.getItem(DRIVE_FILE_ID_KEY));
+  _driveSilentRenew = false;
+  _driveTokenClient.requestAccessToken({ prompt: jaConectado ? '' : 'consent' });
 }
 
 function disconnectGoogleDrive() {
@@ -4162,6 +4185,12 @@ function dismissBackupWarning() {
 }
 
 // ===== INIT =====
+// Renovação silenciosa do token do Drive no primeiro toque: o usuário nunca refaz login
+// enquanto mantiver sessão ativa do Google no navegador.
+document.addEventListener('pointerdown', function driveTapRenew() {
+  if (_driveRenewOnTap) { _driveRenewOnTap = false; driveSilentRenew(); }
+}, { capture: true });
+
 console.log('Controle Financeiro ' + APP_VERSION);
 const _vLabel = document.getElementById('appVersionLabel');
 if (_vLabel) _vLabel.textContent = APP_VERSION;
